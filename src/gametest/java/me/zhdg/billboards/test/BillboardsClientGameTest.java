@@ -58,7 +58,9 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		Path replay = recordReplay(context);
 		log("Recorded replay " + replay);
 
-		context.runOnClient(minecraft -> Flashback.openReplayWorld(replay));
+		// Queue it on Minecraft's own task loop: Fabric's gametest defers world loads started from inside a test task, and
+		// that deferral loses the thread-local Flashback uses to start its replay server instead of a normal one.
+		context.runOnClient(minecraft -> minecraft.schedule(() -> Flashback.openReplayWorld(replay)));
 		waitForReplay(context);
 		context.waitTicks(100); // let the editor UI, chunks and snapshot processing settle
 
@@ -109,7 +111,9 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 			String status = context.computeOnClient(minecraft -> "replayServer=" + (Flashback.getReplayServer() != null)
 				+ " level=" + (minecraft.level != null) + " player=" + (minecraft.player != null)
 				+ " screen=" + (minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getSimpleName())
-				+ " editorState=" + (Flashback.getReplayServer() != null && PlaybackTime.liveEditorState() != null));
+				+ " editorState=" + (Flashback.getReplayServer() != null && PlaybackTime.liveEditorState() != null)
+				+ " server=" + (minecraft.getSingleplayerServer() == null ? "null" : minecraft.getSingleplayerServer().getClass().getName())
+				+ " thread=" + Thread.currentThread().getName());
 			if (!status.contains("false")) {
 				log("Replay open: " + status);
 				return;
