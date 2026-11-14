@@ -112,6 +112,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		checkHiddenHud(context);
 		ViewportChecks.run(context, screenId, worldId);
+		LowerThirdChecks.run(context);
 		log("All Billboards checks passed");
 
 		// Leave the replay (on Minecraft's own task loop, for the same reason as opening it) so the test ends cleanly.

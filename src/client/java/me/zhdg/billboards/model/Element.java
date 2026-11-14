@@ -15,6 +15,9 @@ public class Element {
 	public ElementType type = ElementType.IMAGE;
 	public Space space = Space.WORLD;
 
+	/** The group this element is in, or null at the top level. Its transform is then relative to the group. */
+	public @Nullable UUID parentId = null;
+
 	// --- Placement ---
 	public Facing facing = Facing.FIXED;
 	/** World only: when false the element is drawn on top of blocks and entities. */
@@ -53,6 +56,23 @@ public class Element {
 	/** ARGB colour behind the text; 0 for none. */
 	public int backgroundColor = 0;
 
+	/** Asset id of a TTF/OTF font file, or null for Minecraft's font (which follows resource packs). */
+	public @Nullable String fontAssetId = null;
+
+	// --- Shape ---
+	public ShapeKind shapeKind = ShapeKind.ROUNDED_RECTANGLE;
+	/** ARGB fill colour; with a gradient, the colour at the left / top. */
+	public int fillColor = 0xCC1E1E28;
+	/** ARGB colour at the right / bottom of a gradient. */
+	public int fillColor2 = 0xCC3C3C55;
+	public Gradient gradient = Gradient.NONE;
+	/** ARGB outline colour. */
+	public int strokeColor = 0xFFFFFFFF;
+	/** Outline width (line/arrow thickness), in the same units as the size; 0 for no outline. */
+	public float strokeWidth = 0;
+	/** Corner radius of rounded rectangles, in the same units as the size. */
+	public float cornerRadius = 0.15f;
+
 	// --- Base (un-animated) values ---
 	public ChannelValues transform = new ChannelValues(Channel.TRANSFORM);
 	public ChannelValues appearance = new ChannelValues(Channel.APPEARANCE);
@@ -83,6 +103,8 @@ public class Element {
 		if (this.facing == null) this.facing = Facing.FIXED;
 		if (this.align == null) this.align = TextAlign.CENTER;
 		if (this.attachAnchor == null) this.attachAnchor = AttachAnchor.ABOVE_HEAD;
+		if (this.shapeKind == null) this.shapeKind = ShapeKind.ROUNDED_RECTANGLE;
+		if (this.gradient == null) this.gradient = Gradient.NONE;
 		if (this.transform == null) this.transform = new ChannelValues(Channel.TRANSFORM);
 		if (this.appearance == null) this.appearance = new ChannelValues(Channel.APPEARANCE);
 		if (this.content == null) this.content = new ChannelValues(Channel.CONTENT);
@@ -113,6 +135,15 @@ public class Element {
 		copy.align = this.align;
 		copy.textShadow = this.textShadow;
 		copy.backgroundColor = this.backgroundColor;
+		copy.parentId = this.parentId;
+		copy.fontAssetId = this.fontAssetId;
+		copy.shapeKind = this.shapeKind;
+		copy.fillColor = this.fillColor;
+		copy.fillColor2 = this.fillColor2;
+		copy.gradient = this.gradient;
+		copy.strokeColor = this.strokeColor;
+		copy.strokeWidth = this.strokeWidth;
+		copy.cornerRadius = this.cornerRadius;
 		copy.transform = this.transform.copy();
 		copy.appearance = this.appearance.copy();
 		copy.content = this.content.copy();

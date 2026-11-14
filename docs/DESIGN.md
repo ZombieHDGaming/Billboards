@@ -10,7 +10,7 @@ Overlays render straight into Flashback's export, so they need no video editing 
 | Package | `me.zhdg.billboards` |
 | Target | Minecraft 26.3, Fabric, Flashback 0.43.x (built against 0.43.6) |
 | Java | 25 |
-| Status | Approved. Milestones 1 and 2 implemented. |
+| Status | Approved. Milestones 1-3 implemented. |
 
 ---
 
@@ -212,15 +212,18 @@ fades pop. Depth-tested overlays test against the world but don't write depth, s
 | GIF / APNG | Decode all frames once (ImageIO for GIF; APNG via a small decoder), pack into a texture array/atlas, and pick the frame from replay time |
 | Video | `FFmpegFrameGrabber` from Flashback's JavaCV. **Editor:** async decode thread with a small frame cache, seeking on scrub. **Export:** synchronous, frame-exact decode for each exported frame's timestamp, so output is deterministic. Audio is not mixed in v1 |
 | Text (Minecraft) | Vanilla `Font` rendering (resource-pack fonts work), into world or screen pose |
-| Text (TTF/OTF) | Rasterize glyphs with **FreeType via LWJGL**, which Minecraft already ships, into a high-res atlas (or SDF for crisp scaling) |
+| Text (TTF/OTF) | Rasterize glyphs with **Java's font engine** (AWT, works headless) at 64 px into a 1024² atlas, on demand, drawn with linear filtering. Independent of Minecraft's font internals |
 | Shapes | CPU-tessellated meshes (rounded rects, ellipses, arrows), solid or 2-stop gradient fill + stroke |
 
 ### Blend modes & effects
 
 - Blend modes are separate `RenderPipeline`s (normal, additive, multiply, screen).
 - Effects (shadow, outline, glow, blur) render the element to an offscreen target and then composite it with a shader
-  pass. Groups with effects or group opacity render to an offscreen target too, so the group fades as one unit
-  instead of each child fading separately.
+  pass.
+- **Groups (implemented in M3):** a per-frame `SceneFrame` resolves the hierarchy. A child's model matrix is its
+  group's times its own (camera-facing children are placed by the group but face the camera), and the group's
+  opacity, tint and visibility multiply into each child. Overlapping children of a half-transparent group therefore
+  show through each other; compositing a group into an offscreen target first is left for the effects work.
 
 ---
 

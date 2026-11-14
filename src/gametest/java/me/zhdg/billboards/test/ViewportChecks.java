@@ -106,6 +106,7 @@ final class ViewportChecks {
 			ViewportTools.tool = ViewportTools.Tool.MOVE;
 			ChannelValues screenMoved = ViewportTools.applyScreen(screen, new Matrix4f().translate(80, -45, 0).mul(screenModel), 800, 450);
 			check(near(screenMoved.get(Channel.X), 0.35) && near(screenMoved.get(Channel.Y), 0.5), "screen move: " + screenMoved.toJson());
+			ViewportTools.tool = ViewportTools.Tool.ROTATE;
 			ChannelValues screenRotated = ViewportTools.applyScreen(screen, new Matrix4f(screenModel).rotateZ((float) Math.toRadians(20)), 800, 450);
 			check(near(screenRotated.get(Channel.ROLL), 30), "screen rotate: " + screenRotated.get(Channel.ROLL));
 		} finally {
@@ -302,7 +303,7 @@ final class ViewportChecks {
 		run(parts.toArray(String[]::new));
 	}
 
-	private static void desktopScreenshot(ClientGameTestContext context, String name) {
+	static void desktopScreenshot(ClientGameTestContext context, String name) {
 		if (!hasCommand("xwd") || !hasCommand("convert")) {
 			return;
 		}

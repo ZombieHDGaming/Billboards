@@ -31,8 +31,14 @@ public final class ElementGeometry {
 		}
 	}
 
-	/** Text laid out in font pixels: the shown lines, the block size, and the size of one font pixel in local units. */
-	public record TextLayout(String[] lines, int blockWidth, int blockHeight, float pixel) {
+	/**
+	 * Text laid out in font units (Minecraft font pixels, or raster pixels of a custom font): the shown lines, each
+	 * line's width, the block size, and the size of one font unit in local units.
+	 */
+	public record TextLayout(String[] lines, float[] lineWidths, float blockWidth, float lineHeight, float pixel, @Nullable CustomFont font) {
+		public float blockHeight() {
+			return this.lines.length * this.lineHeight;
+		}
 	}
 
 	private ElementGeometry() {
@@ -44,11 +50,15 @@ public final class ElementGeometry {
 
 	/** The element's visible rectangle in its local frame, or null if it currently draws nothing. */
 	public static @Nullable Bounds localBounds(Element element, ChannelValues content, float unit) {
-		if (element.type == ElementType.IMAGE) {
-			float u0 = clamp01(content.getFloat(Channel.CROP_LEFT));
-			float v0 = clamp01(content.getFloat(Channel.CROP_TOP));
-			float u1 = clamp01(content.getFloat(Channel.CROP_RIGHT));
-			float v1 = clamp01(content.getFloat(Channel.CROP_BOTTOM));
+		if (element.type == ElementType.GROUP) {
+			return null;
+		}
+		if (element.type == ElementType.IMAGE || element.type == ElementType.SHAPE) {
+			boolean crop = element.type == ElementType.IMAGE;
+			float u0 = crop ? clamp01(content.getFloat(Channel.CROP_LEFT)) : 0;
+			float v0 = crop ? clamp01(content.getFloat(Channel.CROP_TOP)) : 0;
+			float u1 = crop ? clamp01(content.getFloat(Channel.CROP_RIGHT)) : 1;
+			float v1 = crop ? clamp01(content.getFloat(Channel.CROP_BOTTOM)) : 1;
 			if (u1 <= u0 || v1 <= v0) {
 				return null;
 			}
@@ -73,18 +83,32 @@ public final class ElementGeometry {
 		if (text.isEmpty()) {
 			return null;
 		}
-		Font font = Minecraft.getInstance().font;
 		String[] lines = text.split("\n", -1);
-		int blockWidth = 0;
-		for (String line : lines) {
-			blockWidth = Math.max(blockWidth, font.width(line));
+		float[] widths = new float[lines.length];
+		float blockWidth = 0;
+
+		CustomFont custom = CustomFont.get(me.zhdg.billboards.project.ProjectManager.currentReplayId(), element.fontAssetId);
+		float lineHeight;
+		if (custom != null) {
+			lineHeight = custom.lineHeight();
+			for (int i = 0; i < lines.length; i++) {
+				widths[i] = custom.width(lines[i]);
+				blockWidth = Math.max(blockWidth, widths[i]);
+			}
+		} else {
+			Font font = Minecraft.getInstance().font;
+			lineHeight = font.lineHeight;
+			for (int i = 0; i < lines.length; i++) {
+				widths[i] = font.width(lines[i]);
+				blockWidth = Math.max(blockWidth, widths[i]);
+			}
 		}
-		if (blockWidth == 0) {
+		if (blockWidth <= 0) {
 			return null;
 		}
 		// fontSize is the height of one line.
-		float pixel = element.fontSize * unit / font.lineHeight;
-		return new TextLayout(lines, blockWidth, lines.length * font.lineHeight, pixel);
+		float pixel = element.fontSize * unit / lineHeight;
+		return new TextLayout(lines, widths, blockWidth, lineHeight, pixel, custom);
 	}
 
 	/** The part of the text shown by the reveal fraction, counting code points (newlines don't count). */

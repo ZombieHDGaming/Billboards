@@ -22,12 +22,16 @@ import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
+import me.zhdg.billboards.model.Gradient;
+import me.zhdg.billboards.model.ShapeKind;
 import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.model.TextAlign;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.ProjectManager;
+import me.zhdg.billboards.render.CustomFont;
 import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.ImageTextures;
+import me.zhdg.billboards.render.SceneFrame;
 import me.zhdg.billboards.render.OverlayRenderer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Camera;
@@ -42,6 +46,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -52,6 +57,7 @@ public final class BillboardsWindow {
 
 	public static final String WINDOW_ID = "billboards";
 	private static final String[] IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp"};
+	private static final String[] FONT_EXTENSIONS = {"ttf", "otf"};
 
 	private static final ImBoolean OPEN = new ImBoolean(true);
 	private static @Nullable UUID nameBufferOwner = null;
@@ -132,10 +138,19 @@ public final class BillboardsWindow {
 		if (ImGui.button("Add image...")) {
 			ImGui.openPopup("##billboards_add_image");
 		}
-		ImGui.sameLine();
+		sameLineIfFits("Add text");
 		if (ImGui.button("Add text")) {
 			ImGui.openPopup("##billboards_add_text");
 		}
+		sameLineIfFits("Add shape");
+		if (ImGui.button("Add shape")) {
+			ImGui.openPopup("##billboards_add_shape");
+		}
+		sameLineIfFits("Add group");
+		if (ImGui.button("Add group")) {
+			ImGui.openPopup("##billboards_add_group");
+		}
+		ImGuiHelper.tooltip("Groups move, rotate, scale and fade everything inside them together. Add things to a group by selecting it first, or with \"Move into group\" in the list.");
 
 		if (ImGui.beginPopup("##billboards_add_image")) {
 			if (ImGui.menuItem("In the world")) {
@@ -155,13 +170,37 @@ public final class BillboardsWindow {
 			}
 			ImGui.endPopup();
 		}
+		if (ImGui.beginPopup("##billboards_add_shape")) {
+			for (ShapeKind kind : ShapeKind.values()) {
+				if (ImGui.beginMenu(kind.displayName)) {
+					if (ImGui.menuItem("In the world")) {
+						addShape(project, kind, Space.WORLD);
+					}
+					if (ImGui.menuItem("On screen")) {
+						addShape(project, kind, Space.SCREEN);
+					}
+					ImGui.endMenu();
+				}
+			}
+			ImGui.endPopup();
+		}
+		if (ImGui.beginPopup("##billboards_add_group")) {
+			if (ImGui.menuItem("In the world")) {
+				addGroup(project, Space.WORLD);
+			}
+			if (ImGui.menuItem("On screen")) {
+				addGroup(project, Space.SCREEN);
+			}
+			ImGui.endPopup();
+		}
 	}
 
 	private static void renderViewportToolbar() {
 		ImGui.textDisabled("Viewport:");
 		for (ViewportTools.Tool tool : ViewportTools.Tool.values()) {
-			ImGui.sameLine();
-			if (ImGui.radioButton(tool.displayName + " (" + tool.key + ")", ViewportTools.tool == tool)) {
+			String label = tool.displayName + " (" + tool.key + ")";
+			sameLineIfFits(label);
+			if (ImGui.radioButton(label, ViewportTools.tool == tool)) {
 				ViewportTools.tool = tool;
 			}
 		}
@@ -184,73 +223,157 @@ public final class BillboardsWindow {
 
 	private static void renderOutliner(BillboardProject project, EditorState editorState) {
 		if (project.elements.isEmpty()) {
-			ImGui.textDisabled("No overlays yet. Add an image or some text.");
+			ImGui.textDisabled("No overlays yet. Add an image, text, a shape or a group.");
 			return;
 		}
 
-		ImGui.beginChild("##billboards_outliner", 0, 150, true);
-		Element toDelete = null;
-		Element toDuplicate = null;
-		int moveFrom = -1;
-		int moveTo = -1;
+		ImGui.beginChild("##billboards_outliner", 0, 170, true);
+		Runnable[] action = {null};
+		renderOutlinerLevel(project, editorState, null, 0, action);
+		ImGui.endChild();
+		if (action[0] != null) {
+			action[0].run();
+			project.markDirty();
+		}
+	}
 
-		for (int i = 0; i < project.elements.size(); i++) {
-			Element element = project.elements.get(i);
+	/** One level of the outliner tree; the clicked context-menu action is stored in {@code action} and run afterwards. */
+	private static void renderOutlinerLevel(BillboardProject project, EditorState editorState, @Nullable UUID parentId, int depth, Runnable[] action) {
+		List<Element> siblings = project.children(parentId);
+		for (int i = 0; i < siblings.size(); i++) {
+			Element element = siblings.get(i);
 			ImGui.pushID(element.id.toString());
 
+			if (depth > 0) {
+				ImGui.indent(depth * 14f);
+			}
 			if (ImGui.checkbox("##visible", !element.hidden)) {
 				element.hidden = !element.hidden;
 				project.markDirty();
 			}
-			ImGuiHelper.tooltip("Show or hide this overlay (also in exports)");
+			ImGuiHelper.tooltip(element.type == ElementType.GROUP ? "Show or hide this group and everything in it" : "Show or hide this overlay (also in exports)");
 			ImGui.sameLine();
 
-			String label = element.name + "  (" + element.type.displayName + ", " + element.space.displayName + ")";
+			String label = (element.type == ElementType.GROUP ? "[+] " : "") + element.name + "  (" + element.type.displayName + ", " + element.space.displayName + ")";
 			if (ImGui.selectable(label, Selection.is(element.id))) {
 				Selection.set(element.id);
 			}
+			if (depth > 0) {
+				ImGui.unindent(depth * 14f);
+			}
+
 			if (ImGui.beginPopupContextItem("##context")) {
+				Element previous = i > 0 ? siblings.get(i - 1) : null;
+				Element next = i < siblings.size() - 1 ? siblings.get(i + 1) : null;
 				if (ImGui.menuItem("Duplicate")) {
-					toDuplicate = element;
+					action[0] = () -> Selection.set(duplicateTree(project, editorState, element, element.parentId).id);
 				}
-				if (ImGui.menuItem("Move up", "", false, i > 0)) {
-					moveFrom = i;
-					moveTo = i - 1;
+				if (ImGui.menuItem("Move up", "", false, previous != null)) {
+					action[0] = () -> swap(project, element, previous);
 				}
-				if (ImGui.menuItem("Move down", "", false, i < project.elements.size() - 1)) {
-					moveFrom = i;
-					moveTo = i + 1;
+				if (ImGui.menuItem("Move down", "", false, next != null)) {
+					action[0] = () -> swap(project, element, next);
+				}
+				List<Element> groups = project.elements.stream()
+					.filter(g -> g.type == ElementType.GROUP && g.space == element.space && !project.isWithin(g, element.id) && !g.id.equals(element.parentId))
+					.toList();
+				if (ImGui.beginMenu("Move into group", !groups.isEmpty())) {
+					for (Element group : groups) {
+						if (ImGui.menuItem(group.name + "##" + group.id)) {
+							action[0] = () -> reparent(project, editorState, element, group);
+						}
+					}
+					ImGui.endMenu();
+				}
+				if (element.parentId != null && ImGui.menuItem("Move out of group")) {
+					Element group = project.get(element.parentId);
+					Element outer = group == null || group.parentId == null ? null : project.get(group.parentId);
+					action[0] = () -> reparent(project, editorState, element, outer);
+				}
+				if (element.type == ElementType.GROUP && ImGui.menuItem("Ungroup")) {
+					action[0] = () -> ungroup(project, editorState, element);
 				}
 				ImGui.separator();
-				if (ImGui.menuItem("Delete")) {
-					toDelete = element;
+				if (ImGui.menuItem(element.type == ElementType.GROUP ? "Delete group and contents" : "Delete")) {
+					action[0] = () -> deleteTree(project, editorState, element);
 				}
 				ImGui.endPopup();
 			}
 			ImGui.popID();
-		}
-		ImGui.endChild();
 
-		if (toDuplicate != null) {
-			Element copy = toDuplicate.copy();
-			copy.name = toDuplicate.name + " copy";
-			project.elements.add(project.elements.indexOf(toDuplicate) + 1, copy);
-			TrackEditor.duplicateTracks(editorState, toDuplicate.id, copy);
-			Selection.set(copy.id);
-			project.markDirty();
-		}
-		if (moveFrom >= 0) {
-			project.elements.add(moveTo, project.elements.remove(moveFrom));
-			project.markDirty();
-		}
-		if (toDelete != null) {
-			project.elements.remove(toDelete);
-			TrackEditor.removeTracks(editorState, toDelete.id);
-			if (Selection.is(toDelete.id)) {
-				Selection.set(null);
+			if (element.type == ElementType.GROUP) {
+				renderOutlinerLevel(project, editorState, element.id, depth + 1, action);
 			}
-			project.markDirty();
 		}
+	}
+
+	/** Swaps two siblings' places in the project's list (which is also their order on screen within a layer). */
+	private static void swap(BillboardProject project, Element a, Element b) {
+		int indexA = project.elements.indexOf(a);
+		int indexB = project.elements.indexOf(b);
+		project.elements.set(indexA, b);
+		project.elements.set(indexB, a);
+	}
+
+	/** Moves an element into a group (or to the top level), keeping it where it is on screen / in the world. */
+	private static void reparent(BillboardProject project, EditorState editorState, Element element, @Nullable Element newParent) {
+		SceneFrame scene = SceneFrame.current();
+		if (scene != null) {
+			SceneFrame.Node node = scene.node(element.id);
+			SceneFrame.Node parentNode = newParent == null ? null : scene.node(newParent.id);
+			int tick = PlaybackTime.cursorTick();
+			boolean animated = tick >= 0 && TrackEditor.keyState(editorState, element.id, Channel.TRANSFORM, tick) != TrackEditor.KeyState.NOT_ANIMATED;
+			if (node != null && !animated) {
+				ChannelValues transform = ViewportTools.reparentedTransform(scene, node, parentNode);
+				if (transform != null) {
+					element.transform = transform;
+				}
+			}
+		}
+		element.parentId = newParent == null ? null : newParent.id;
+		if (newParent != null) {
+			// Attachment belongs to the group now.
+			element.attachEntity = null;
+			element.attachEntityName = null;
+		}
+	}
+
+	private static void ungroup(BillboardProject project, EditorState editorState, Element group) {
+		Element outer = group.parentId == null ? null : project.get(group.parentId);
+		for (Element child : project.children(group.id)) {
+			reparent(project, editorState, child, outer);
+		}
+		deleteTree(project, editorState, group);
+	}
+
+	private static void deleteTree(BillboardProject project, EditorState editorState, Element root) {
+		for (Element element : List.copyOf(project.elements)) {
+			if (project.isWithin(element, root.id)) {
+				project.elements.remove(element);
+				TrackEditor.removeTracks(editorState, element.id);
+				if (Selection.is(element.id)) {
+					Selection.set(null);
+				}
+			}
+		}
+	}
+
+	/** Copies an element (and, for a group, everything in it) with its keyframe tracks. Returns the copy. */
+	private static Element duplicateTree(BillboardProject project, EditorState editorState, Element source, @Nullable UUID parentId) {
+		Element copy = source.copy();
+		copy.parentId = parentId;
+		if (Objects.equals(parentId, source.parentId)) {
+			copy.name = source.name + " copy";
+		}
+		int index = project.elements.indexOf(source);
+		project.elements.add(index < 0 ? project.elements.size() : index + 1, copy);
+		TrackEditor.duplicateTracks(editorState, source.id, copy);
+		for (Element child : project.children(source.id)) {
+			if (child != copy) {
+				duplicateTree(project, editorState, child, copy.id);
+			}
+		}
+		return copy;
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -282,7 +405,9 @@ public final class BillboardsWindow {
 		int tick = PlaybackTime.cursorTick();
 		KeyframeEvaluator.Frame frame = KeyframeEvaluator.evaluate(PlaybackTime.current());
 		for (Channel channel : Channel.values()) {
-			renderChannel(project, editorState, element, channel, frame, tick);
+			if (channel != Channel.CONTENT || element.type.hasContent()) {
+				renderChannel(project, editorState, element, channel, frame, tick);
+			}
 		}
 
 		ImGui.popItemWidth();
@@ -304,27 +429,35 @@ public final class BillboardsWindow {
 				changed = true;
 			}
 			ImGuiHelper.tooltip("When off, the overlay is always drawn on top of the world");
-			if (renderAttachment(element)) {
+			if (element.parentId == null && renderAttachment(element)) {
 				changed = true;
 			}
 		}
 
-		float[] pivot = {element.pivotX, element.pivotY};
-		if (ImGui.dragFloat2("Pivot (0-1)", pivot, 0.005f, 0f, 1f, "%.3f")) {
-			element.pivotX = pivot[0];
-			element.pivotY = pivot[1];
-			changed = true;
+		if (element.type != ElementType.GROUP) {
+			float[] pivot = {element.pivotX, element.pivotY};
+			if (ImGui.dragFloat2("Pivot (0-1)", pivot, 0.005f, 0f, 1f, "%.3f")) {
+				element.pivotX = pivot[0];
+				element.pivotY = pivot[1];
+				changed = true;
+			}
+			ImGuiHelper.tooltip("The point of the overlay that sits on its position and that it rotates around. 0.5, 0.5 is the centre");
+		} else {
+			ImGui.textDisabled("Position, rotation, scale, opacity and tint apply to everything in the group.");
 		}
-		ImGuiHelper.tooltip("The point of the overlay that sits on its position and that it rotates around. 0.5, 0.5 is the centre");
 
-		int[] layer = {element.layer};
-		if (ImGuiHelper.inputInt("Layer", layer)) {
-			element.layer = layer[0];
-			changed = true;
+		if (element.parentId == null) {
+			int[] layer = {element.layer};
+			if (ImGuiHelper.inputInt("Layer", layer)) {
+				element.layer = layer[0];
+				changed = true;
+			}
+			ImGuiHelper.tooltip(element.space == Space.SCREEN
+				? "Higher layers are drawn on top (a group's contents are drawn in list order)"
+				: "Only affects overlays that are not hidden behind blocks; the rest are sorted by distance");
+		} else {
+			ImGui.textDisabled("Inside a group: position is relative to the group.");
 		}
-		ImGuiHelper.tooltip(element.space == Space.SCREEN
-			? "Higher layers are drawn on top"
-			: "Only affects overlays that are not hidden behind blocks; the rest are sorted by distance");
 
 		String unit = element.space == Space.WORLD ? "blocks" : "of frame height";
 		if (element.type == ElementType.IMAGE) {
@@ -345,7 +478,23 @@ public final class BillboardsWindow {
 				changed = true;
 			}
 			ImGuiHelper.tooltip("Use nearest-neighbour filtering, for pixel art");
-		} else {
+		} else if (element.type == ElementType.SHAPE) {
+			changed |= renderShapeSettings(element, unit);
+		} else if (element.type == ElementType.TEXT) {
+			String fontName = element.fontAssetId == null ? "Minecraft" : project.assets.getOrDefault(element.fontAssetId, element.fontAssetId);
+			ImGui.text("Font: " + fontName);
+			ImGui.sameLine();
+			if (ImGui.smallButton("Choose...")) {
+				pickFile(replayId, "Fonts", FONT_EXTENSIONS, path -> setFont(project, replayId, element, path));
+			}
+			ImGuiHelper.tooltip("Use a TTF or OTF font file instead of Minecraft's font");
+			if (element.fontAssetId != null) {
+				ImGui.sameLine();
+				if (ImGui.smallButton("Minecraft font")) {
+					element.fontAssetId = null;
+					changed = true;
+				}
+			}
 			float[] fontSize = {element.fontSize};
 			if (ImGui.dragFloat("Line height (" + unit + ")", fontSize, 0.002f, 0.001f, 1000f, "%.3f")) {
 				element.fontSize = fontSize[0];
@@ -512,6 +661,110 @@ public final class BillboardsWindow {
 	// Creating elements
 	// ------------------------------------------------------------------------------------------------
 
+	private static boolean renderShapeSettings(Element element, String unit) {
+		boolean changed = false;
+		ShapeKind kind = enumCombo("Shape", element.shapeKind, ShapeKind.values(), k -> k.displayName);
+		if (kind != element.shapeKind) {
+			element.shapeKind = kind;
+			changed = true;
+		}
+		float[] size = {element.width, element.height};
+		if (ImGui.dragFloat2("Size (" + unit + ")", size, 0.005f, 0.001f, 10000f, "%.3f")) {
+			element.width = size[0];
+			element.height = size[1];
+			changed = true;
+		}
+		float[] fill = argbToFloats(element.fillColor);
+		if (ImGui.colorEdit4(element.gradient == Gradient.NONE ? "Fill" : "Fill (start)", fill)) {
+			element.fillColor = floatsToArgb(fill);
+			changed = true;
+		}
+		Gradient gradient = enumCombo("Gradient", element.gradient, Gradient.values(), g -> g.displayName);
+		if (gradient != element.gradient) {
+			element.gradient = gradient;
+			changed = true;
+		}
+		if (element.gradient != Gradient.NONE) {
+			float[] fill2 = argbToFloats(element.fillColor2);
+			if (ImGui.colorEdit4("Fill (end)", fill2)) {
+				element.fillColor2 = floatsToArgb(fill2);
+				changed = true;
+			}
+		}
+		boolean lineLike = element.shapeKind == ShapeKind.LINE || element.shapeKind == ShapeKind.ARROW;
+		float[] stroke = {element.strokeWidth};
+		if (ImGui.dragFloat(lineLike ? "Thickness (" + unit + ")" : "Outline width (" + unit + ")", stroke, 0.001f, 0f, 1000f, "%.3f")) {
+			element.strokeWidth = Math.max(0, stroke[0]);
+			changed = true;
+		}
+		if (!lineLike) {
+			float[] strokeColor = argbToFloats(element.strokeColor);
+			if (ImGui.colorEdit4("Outline", strokeColor)) {
+				element.strokeColor = floatsToArgb(strokeColor);
+				changed = true;
+			}
+		}
+		if (element.shapeKind == ShapeKind.ROUNDED_RECTANGLE) {
+			float[] radius = {element.cornerRadius};
+			if (ImGui.dragFloat("Corner radius (" + unit + ")", radius, 0.002f, 0f, 1000f, "%.3f")) {
+				element.cornerRadius = Math.max(0, radius[0]);
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	private static void addShape(BillboardProject project, ShapeKind kind, Space space) {
+		Element element = new Element();
+		element.type = ElementType.SHAPE;
+		element.space = space;
+		element.shapeKind = kind;
+		element.name = kind.displayName + " " + (project.elements.size() + 1);
+		boolean lineLike = kind == ShapeKind.LINE || kind == ShapeKind.ARROW;
+		if (space == Space.WORLD) {
+			element.width = 2;
+			element.height = lineLike ? 0.5f : 1;
+			element.strokeWidth = lineLike ? 0.1f : 0;
+			element.cornerRadius = 0.2f;
+		} else {
+			element.width = 0.6f;
+			element.height = lineLike ? 0.08f : 0.15f;
+			element.strokeWidth = lineLike ? 0.015f : 0;
+			element.cornerRadius = 0.03f;
+		}
+		if (lineLike) {
+			element.fillColor = 0xFFFFFFFF;
+			element.fillColor2 = 0xFFFFFFFF;
+		}
+		place(element);
+		add(project, element);
+	}
+
+	private static void addGroup(BillboardProject project, Space space) {
+		Element element = new Element();
+		element.type = ElementType.GROUP;
+		element.space = space;
+		element.name = "Group " + (project.elements.size() + 1);
+		place(element);
+		// New groups start at the top level even when another group is selected (nest them with "Move into group").
+		Selection.set(null);
+		add(project, element);
+	}
+
+	private static void setFont(BillboardProject project, UUID replayId, Element element, Path path) {
+		if (!CustomFont.isReadable(path)) {
+			Billboards.LOGGER.warn("Not a usable font file: {}", path);
+			return;
+		}
+		try {
+			element.fontAssetId = AssetStore.importFile(replayId, project, path);
+			CustomFont.retry(element.fontAssetId);
+			project.markDirty();
+		} catch (Exception e) {
+			Billboards.LOGGER.error("Unable to import {}", path, e);
+		}
+	}
+
 	private static void addText(BillboardProject project, Space space) {
 		Element element = new Element();
 		element.type = ElementType.TEXT;
@@ -562,6 +815,14 @@ public final class BillboardsWindow {
 	}
 
 	private static void add(BillboardProject project, Element element) {
+		// With a group of the same space selected, the new element goes into it, at the group's origin.
+		Element selected = Selection.get(project);
+		if (selected != null && selected.type == ElementType.GROUP && selected.space == element.space) {
+			element.parentId = selected.id;
+			for (int component : new int[]{Channel.X, Channel.Y, Channel.Z, Channel.PITCH, Channel.YAW, Channel.ROLL}) {
+				element.transform.set(component, 0);
+			}
+		}
 		project.elements.add(element);
 		project.markDirty();
 		Selection.set(element.id);
@@ -597,8 +858,12 @@ public final class BillboardsWindow {
 	}
 
 	private static void pickImage(UUID replayId, java.util.function.Consumer<Path> onPicked) {
+		pickFile(replayId, "Images", IMAGE_EXTENSIONS, onPicked);
+	}
+
+	private static void pickFile(UUID replayId, String description, String[] extensions, java.util.function.Consumer<Path> onPicked) {
 		String start = FabricLoader.getInstance().getGameDir().toString();
-		AsyncFileDialogs.openFileDialog(start, "Images", IMAGE_EXTENSIONS).thenAccept(picked -> {
+		AsyncFileDialogs.openFileDialog(start, description, extensions).thenAccept(picked -> {
 			if (picked != null) {
 				// The dialog completes on another thread; touch the project on the render thread only.
 				Minecraft.getInstance().execute(() -> {
@@ -613,6 +878,16 @@ public final class BillboardsWindow {
 	// ------------------------------------------------------------------------------------------------
 	// Helpers
 	// ------------------------------------------------------------------------------------------------
+
+	/** Continues on the same line if a button with this label fits there, otherwise starts a new line. */
+	private static void sameLineIfFits(String label) {
+		float itemWidth = ImGui.calcTextSize(label).x + ImGui.getStyle().getFramePaddingX() * 2 + ImGui.getStyle().getItemSpacingX() + 24;
+		float lineEnd = ImGui.getItemRectMaxX();
+		float windowEnd = ImGui.getWindowPosX() + ImGui.getWindowContentRegionMaxX();
+		if (lineEnd + itemWidth <= windowEnd) {
+			ImGui.sameLine();
+		}
+	}
 
 	private static float aspect(Path path) {
 		int[] size = ImageTextures.readSize(path);

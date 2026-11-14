@@ -3,6 +3,7 @@ package me.zhdg.billboards.editor;
 import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.OverlayRenderer;
+import me.zhdg.billboards.render.SceneFrame;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -15,7 +16,8 @@ import java.util.UUID;
 
 /**
  * Finds the overlay under a point of the viewport. Screen overlays are checked first (they are drawn on top),
- * topmost layer first; then world overlays along the mouse ray, nearest first.
+ * topmost first; then world overlays along the mouse ray, nearest first. Clicking an element inside a group picks
+ * that element; groups are selected from the outliner.
  */
 public final class ViewportPicker {
 
@@ -36,23 +38,27 @@ public final class ViewportPicker {
 	}
 
 	public static @Nullable UUID pickScreen(float frameX, float frameY) {
+		SceneFrame scene = SceneFrame.current();
+		if (scene == null) {
+			return null;
+		}
 		var target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
 		float width = target.width;
 		float height = target.height;
 
-		List<OverlayRenderer.Resolved> elements = OverlayRenderer.resolve(Space.SCREEN);
-		// Drawn in layer order (stable), so the last one drawn is on top: check in reverse.
-		elements.sort(Comparator.comparingInt(r -> r.element().layer));
-		for (int i = elements.size() - 1; i >= 0; i--) {
-			OverlayRenderer.Resolved resolved = elements.get(i);
-			ElementGeometry.Bounds bounds = ElementGeometry.localBounds(resolved.element(), resolved.content(), height);
+		List<SceneFrame.Node> nodes = scene.drawables(Space.SCREEN);
+		// Same order as drawing, so the last one drawn is on top: check in reverse.
+		nodes.sort(Comparator.comparingInt(scene::rootLayer));
+		for (int i = nodes.size() - 1; i >= 0; i--) {
+			SceneFrame.Node node = nodes.get(i);
+			ElementGeometry.Bounds bounds = ElementGeometry.localBounds(node.element(), node.content(), height);
 			if (bounds == null) {
 				continue;
 			}
-			Matrix4f inverse = ElementGeometry.screenModel(resolved.transform(), width, height).invert();
+			Matrix4f inverse = scene.screenModel(node, width, height).invert();
 			Vector4f local = inverse.transform(new Vector4f(frameX * width, frameY * height, 0, 1));
 			if (bounds.contains(local.x, local.y)) {
-				return resolved.element().id;
+				return node.element().id;
 			}
 		}
 		return null;
@@ -60,25 +66,26 @@ public final class ViewportPicker {
 
 	public static @Nullable UUID pickWorld(Vec3 direction) {
 		OverlayRenderer.SceneCamera camera = OverlayRenderer.lastCamera();
-		if (camera == null) {
+		SceneFrame scene = SceneFrame.current();
+		if (camera == null || scene == null) {
 			return null;
 		}
 		UUID best = null;
 		double bestDistance = Double.MAX_VALUE;
-		for (OverlayRenderer.Resolved resolved : OverlayRenderer.resolve(Space.WORLD)) {
-			Double distance = intersect(resolved, camera, direction);
+		for (SceneFrame.Node node : scene.drawables(Space.WORLD)) {
+			Double distance = intersect(scene, node, camera, direction);
 			if (distance != null && distance < bestDistance) {
 				bestDistance = distance;
-				best = resolved.element().id;
+				best = node.element().id;
 			}
 		}
 		return best;
 	}
 
 	/** Distance along the ray (from the camera) at which it hits the element's quad, or null if it misses. */
-	public static @Nullable Double intersect(OverlayRenderer.Resolved resolved, OverlayRenderer.SceneCamera camera, Vec3 direction) {
-		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(resolved.element(), resolved.content(), 1);
-		Matrix4f model = ElementGeometry.worldModel(resolved.element(), resolved.transform(), camera.position(), camera.orientation());
+	public static @Nullable Double intersect(SceneFrame scene, SceneFrame.Node node, OverlayRenderer.SceneCamera camera, Vec3 direction) {
+		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(node.element(), node.content(), 1);
+		Matrix4f model = scene.worldModel(node, camera.position(), camera.orientation());
 		if (bounds == null || model == null) {
 			return null;
 		}

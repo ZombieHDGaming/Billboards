@@ -6,12 +6,9 @@ import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuSampler;
 import com.moulberry.flashback.Flashback;
 import me.zhdg.billboards.keyframe.KeyframeEvaluator;
-import me.zhdg.billboards.keyframe.PlaybackTime;
-import me.zhdg.billboards.model.BillboardProject;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
-import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.ProjectManager;
 import net.minecraft.client.Minecraft;
@@ -25,13 +22,12 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Draws overlays. Placement comes from {@link ElementGeometry}; this class turns it into quads.
+ * Draws overlays. Placement comes from {@link SceneFrame} / {@link ElementGeometry}; this class turns it into quads.
  */
 public final class OverlayRenderer {
 
@@ -39,10 +35,6 @@ public final class OverlayRenderer {
 	private static final float MIN_TEXT_ALPHA = 4f / 255f;
 
 	private OverlayRenderer() {
-	}
-
-	/** A resolved element: static settings plus the values for this frame. */
-	public record Resolved(Element element, ChannelValues transform, ChannelValues appearance, ChannelValues content) {
 	}
 
 	/** The camera of the last rendered level frame, for picking and gizmos in the editor. */
@@ -77,27 +69,37 @@ public final class OverlayRenderer {
 		lastCamera = new SceneCamera(camera.pos, new Quaternionf(camera.orientation),
 			new Matrix4f(camera.viewRotationMatrix), new Matrix4f(camera.projectionMatrix));
 
-		List<Resolved> elements = resolve(Space.WORLD);
-		if (elements.isEmpty()) {
+		SceneFrame scene = SceneFrame.current();
+		if (scene == null) {
+			return;
+		}
+		List<SceneFrame.Node> nodes = scene.drawables(Space.WORLD);
+		if (nodes.isEmpty()) {
 			return;
 		}
 
 		Vec3 cameraPos = camera.pos;
 		// Depth-tested elements first, far to near, then always-on-top elements by layer.
-		elements.sort(Comparator
-			.comparingInt((Resolved r) -> r.element().depthTest ? 0 : 1)
-			.thenComparingInt(r -> r.element().depthTest ? 0 : r.element().layer)
-			.thenComparingDouble(r -> r.element().depthTest ? -distanceSq(r, cameraPos) : 0));
+		nodes.sort(Comparator
+			.comparingInt((SceneFrame.Node n) -> n.element().depthTest ? 0 : 1)
+			.thenComparingInt(n -> n.element().depthTest ? 0 : scene.rootLayer(n))
+			.thenComparingDouble(n -> {
+				if (!n.element().depthTest) {
+					return 0;
+				}
+				Vec3 position = scene.worldPosition(n, cameraPos, camera.orientation);
+				return position == null ? 0 : -position.distanceToSqr(cameraPos);
+			}));
 
 		UUID replayId = ProjectManager.currentReplayId();
 		try (OverlayBatch batch = new OverlayBatch()) {
-			for (Resolved resolved : elements) {
-				Matrix4f model = ElementGeometry.worldModel(resolved.element(), resolved.transform(), cameraPos, camera.orientation);
+			for (SceneFrame.Node node : nodes) {
+				Matrix4f model = scene.worldModel(node, cameraPos, camera.orientation);
 				if (model == null) {
 					continue;
 				}
 				Matrix4f root = new Matrix4f(camera.viewRotationMatrix).mul(model);
-				drawElement(batch, resolved, root, 1.0f, resolved.element().depthTest, replayId);
+				drawElement(batch, node, root, 1.0f, node.element().depthTest, replayId);
 			}
 			batch.draw("billboards world overlays", true);
 		}
@@ -105,11 +107,16 @@ public final class OverlayRenderer {
 
 	/** Screen-space pass, called after the level (and hand) are drawn, before the HUD. Uses its own orthographic projection. */
 	public static void renderScreen() {
-		List<Resolved> elements = resolve(Space.SCREEN);
-		if (elements.isEmpty()) {
+		SceneFrame scene = SceneFrame.current();
+		if (scene == null) {
 			return;
 		}
-		elements.sort(Comparator.comparingInt(r -> r.element().layer));
+		List<SceneFrame.Node> nodes = scene.drawables(Space.SCREEN);
+		if (nodes.isEmpty()) {
+			return;
+		}
+		// Stable sort: within a layer, outliner order (a group's contents in their own order).
+		nodes.sort(Comparator.comparingInt(scene::rootLayer));
 
 		var target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
 		int width = target.width;
@@ -118,41 +125,15 @@ public final class OverlayRenderer {
 		UUID replayId = ProjectManager.currentReplayId();
 		ScreenProjection.begin(width, height);
 		try (OverlayBatch batch = new OverlayBatch()) {
-			for (Resolved resolved : elements) {
-				Matrix4f root = ElementGeometry.screenModel(resolved.transform(), width, height);
+			for (SceneFrame.Node node : nodes) {
+				Matrix4f root = scene.screenModel(node, width, height);
 				// Sizes are fractions of the frame height.
-				drawElement(batch, resolved, root, height, false, replayId);
+				drawElement(batch, node, root, height, false, replayId);
 			}
 			batch.draw("billboards screen overlays", false);
 		} finally {
 			ScreenProjection.end();
 		}
-	}
-
-	// ------------------------------------------------------------------------------------------------
-	// Resolution
-	// ------------------------------------------------------------------------------------------------
-
-	/** Every visible element of a space with its values for the current frame. */
-	public static List<Resolved> resolve(Space space) {
-		List<Resolved> result = new ArrayList<>();
-		BillboardProject project = ProjectManager.getCurrent();
-		if (project == null || project.elements.isEmpty()) {
-			return result;
-		}
-		KeyframeEvaluator.Frame frame = KeyframeEvaluator.evaluate(PlaybackTime.current());
-
-		for (Element element : project.elements) {
-			if (element.space != space || element.hidden || (space == Space.WORLD && !ElementGeometry.isPlaced(element))) {
-				continue;
-			}
-			ChannelValues appearance = valuesOf(frame, element, Channel.APPEARANCE);
-			if (appearance.get(Channel.VISIBLE) < 0.5 || appearance.get(Channel.OPACITY) <= 0) {
-				continue;
-			}
-			result.add(new Resolved(element, valuesOf(frame, element, Channel.TRANSFORM), appearance, valuesOf(frame, element, Channel.CONTENT)));
-		}
-		return result;
 	}
 
 	/** A gizmo drag preview if there is one, then the animated value if the channel has a track, then the base value. */
@@ -167,11 +148,6 @@ public final class OverlayRenderer {
 		return animated != null ? animated : element.base(channel);
 	}
 
-	private static double distanceSq(Resolved resolved, Vec3 cameraPos) {
-		Vec3 position = ElementGeometry.worldPosition(resolved.element(), resolved.transform());
-		return position == null ? 0 : position.distanceToSqr(cameraPos);
-	}
-
 	// ------------------------------------------------------------------------------------------------
 	// Element drawing
 	// ------------------------------------------------------------------------------------------------
@@ -179,11 +155,13 @@ public final class OverlayRenderer {
 	/**
 	 * @param unit size multiplier: 1 in the world (sizes are in blocks), the frame height on screen
 	 */
-	private static void drawElement(OverlayBatch batch, Resolved resolved, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
-		if (resolved.element().type == ElementType.IMAGE) {
-			drawImage(batch, resolved, root, unit, depthTest, replayId);
-		} else {
-			drawText(batch, resolved, root, unit, depthTest);
+	private static void drawElement(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
+		switch (node.element().type) {
+			case IMAGE -> drawImage(batch, node, root, unit, depthTest, replayId);
+			case TEXT -> drawText(batch, node, root, unit, depthTest);
+			case SHAPE -> drawShape(batch, node, root, unit, depthTest);
+			case GROUP -> {
+			}
 		}
 	}
 
@@ -199,9 +177,13 @@ public final class OverlayRenderer {
 		return (int) Math.round(Math.max(0, Math.min(1, value)) * 255);
 	}
 
-	private static void drawImage(OverlayBatch batch, Resolved resolved, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
-		Element element = resolved.element();
-		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, resolved.content(), unit);
+	private static GpuSampler sampler(FilterMode mode) {
+		return RenderSystem.getSamplerCache().getClampToEdge(mode);
+	}
+
+	private static void drawImage(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
+		Element element = node.element();
+		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, node.content(), unit);
 		if (bounds == null) {
 			return;
 		}
@@ -212,7 +194,7 @@ public final class OverlayRenderer {
 			texture = ImageTextures.placeholder();
 		}
 
-		ChannelValues content = resolved.content();
+		ChannelValues content = node.content();
 		float u0 = content.getFloat(Channel.CROP_LEFT);
 		float v0 = content.getFloat(Channel.CROP_TOP);
 		float u1 = content.getFloat(Channel.CROP_RIGHT);
@@ -225,10 +207,10 @@ public final class OverlayRenderer {
 			v1 = Math.max(1, element.height * 4);
 		}
 
-		int color = color(resolved.appearance());
+		int color = color(node.appearance());
 		GpuSampler sampler = missing
 			? RenderSystem.getSamplerCache().getRepeat(FilterMode.NEAREST)
-			: RenderSystem.getSamplerCache().getClampToEdge(element.pixelated ? FilterMode.NEAREST : FilterMode.LINEAR);
+			: sampler(element.pixelated ? FilterMode.NEAREST : FilterMode.LINEAR);
 		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), texture.view(), sampler);
 		buffer.addVertex(root, bounds.minX(), bounds.maxY(), 0).setUv(u0, v0).setColor(color);
 		buffer.addVertex(root, bounds.minX(), bounds.minY(), 0).setUv(u0, v1).setColor(color);
@@ -236,18 +218,23 @@ public final class OverlayRenderer {
 		buffer.addVertex(root, bounds.maxX(), bounds.maxY(), 0).setUv(u1, v0).setColor(color);
 	}
 
-	private static void drawText(OverlayBatch batch, Resolved resolved, Matrix4f root, float unit, boolean depthTest) {
-		Element element = resolved.element();
-		ChannelValues appearance = resolved.appearance();
-		if (appearance.get(Channel.OPACITY) < MIN_TEXT_ALPHA) {
+	private static void drawShape(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest) {
+		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(node.element(), node.content(), unit);
+		if (bounds == null) {
 			return;
 		}
-		ElementGeometry.TextLayout layout = ElementGeometry.textLayout(element, resolved.content(), unit);
+		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), ImageTextures.white().view(), sampler(FilterMode.NEAREST));
+		ShapeTessellator.draw(buffer, root, node.element(), bounds, unit, color(node.appearance()));
+	}
+
+	private static void drawText(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest) {
+		Element element = node.element();
+		ChannelValues appearance = node.appearance();
+		ElementGeometry.TextLayout layout = ElementGeometry.textLayout(element, node.content(), unit);
 		if (layout == null) {
 			return;
 		}
 
-		Font font = Minecraft.getInstance().font;
 		float pixel = layout.pixel();
 		Matrix4f pose = new Matrix4f(root)
 			.translate(-element.pivotX * layout.blockWidth() * pixel, element.pivotY * layout.blockHeight() * pixel, 0)
@@ -255,18 +242,21 @@ public final class OverlayRenderer {
 
 		int color = color(appearance);
 		int background = scaleAlpha(element.backgroundColor, appearance.get(Channel.OPACITY));
-		GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 
+		if (layout.font() != null) {
+			drawCustomFontText(batch, element, layout, pose, color, background, depthTest);
+			return;
+		}
+
+		if (appearance.get(Channel.OPACITY) < MIN_TEXT_ALPHA) {
+			return;
+		}
+		Font font = Minecraft.getInstance().font;
+		GpuSampler sampler = sampler(FilterMode.NEAREST);
 		String[] lines = layout.lines();
 		for (int i = 0; i < lines.length; i++) {
-			String line = lines[i];
-			int lineWidth = font.width(line);
-			float x = switch (element.align) {
-				case LEFT -> 0;
-				case CENTER -> (layout.blockWidth() - lineWidth) / 2f;
-				case RIGHT -> layout.blockWidth() - lineWidth;
-			};
-			Font.PreparedText prepared = font.prepareText(line, x, i * font.lineHeight, color, element.textShadow, background);
+			float x = alignedX(element, layout, i);
+			Font.PreparedText prepared = font.prepareText(lines[i], x, i * layout.lineHeight(), color, element.textShadow, background);
 			prepared.visit(new Font.GlyphVisitor() {
 				@Override
 				public void acceptRenderable(TextRenderable renderable) {
@@ -279,6 +269,73 @@ public final class OverlayRenderer {
 				}
 			});
 		}
+	}
+
+	/** Text in a TTF/OTF font: background, then shadow, then glyphs, all from the font's glyph atlas. */
+	private static void drawCustomFontText(OverlayBatch batch, Element element, ElementGeometry.TextLayout layout, Matrix4f pose,
+	                                       int color, int background, boolean depthTest) {
+		CustomFont font = layout.font();
+		// Same proportions as Minecraft's font: one "pixel" of a 9-pixel line.
+		float unitPixel = layout.lineHeight() / 9f;
+		String[] lines = layout.lines();
+
+		if ((background >>> 24) != 0) {
+			VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), ImageTextures.white().view(), sampler(FilterMode.NEAREST));
+			for (int i = 0; i < lines.length; i++) {
+				float x = alignedX(element, layout, i);
+				float top = i * layout.lineHeight();
+				quad(buffer, pose, x - unitPixel, top - unitPixel, x + layout.lineWidths()[i] + unitPixel, top + layout.lineHeight(), 0.5f, 0.5f, 0.5f, 0.5f, background);
+			}
+		}
+
+		// Look glyphs up (rasterizing new ones) before taking the texture, so it is uploaded with them.
+		for (String line : lines) {
+			font.width(line);
+		}
+		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), font.textureView(), sampler(FilterMode.LINEAR));
+		if (element.textShadow) {
+			int shadow = (color & 0xFF000000) | ((((color >> 16) & 0xFF) / 4) << 16) | ((((color >> 8) & 0xFF) / 4) << 8) | ((color & 0xFF) / 4);
+			drawGlyphs(buffer, font, element, layout, pose, unitPixel, shadow);
+		}
+		drawGlyphs(buffer, font, element, layout, pose, 0, color);
+	}
+
+	private static void drawGlyphs(VertexConsumer buffer, CustomFont font, Element element, ElementGeometry.TextLayout layout, Matrix4f pose,
+	                               float offset, int color) {
+		String[] lines = layout.lines();
+		for (int i = 0; i < lines.length; i++) {
+			float penX = alignedX(element, layout, i) + offset;
+			float baseline = i * layout.lineHeight() + font.ascent() + offset;
+			String line = lines[i];
+			for (int c = 0; c < line.length(); ) {
+				int codePoint = line.codePointAt(c);
+				CustomFont.Glyph glyph = font.glyph(codePoint);
+				if (glyph.visible()) {
+					quad(buffer, pose, penX + glyph.x0(), baseline + glyph.y0(), penX + glyph.x1(), baseline + glyph.y1(),
+						glyph.u0(), glyph.v0(), glyph.u1(), glyph.v1(), color);
+				}
+				penX += glyph.advance();
+				c += Character.charCount(codePoint);
+			}
+		}
+	}
+
+	/** A quad in glyph space (y down): (x0, y0) top-left, (x1, y1) bottom-right. */
+	private static void quad(VertexConsumer buffer, Matrix4f pose, float x0, float y0, float x1, float y1,
+	                         float u0, float v0, float u1, float v1, int color) {
+		buffer.addVertex(pose, x0, y0, 0).setUv(u0, v0).setColor(color);
+		buffer.addVertex(pose, x0, y1, 0).setUv(u0, v1).setColor(color);
+		buffer.addVertex(pose, x1, y1, 0).setUv(u1, v1).setColor(color);
+		buffer.addVertex(pose, x1, y0, 0).setUv(u1, v0).setColor(color);
+	}
+
+	private static float alignedX(Element element, ElementGeometry.TextLayout layout, int line) {
+		float lineWidth = layout.lineWidths()[line];
+		return switch (element.align) {
+			case LEFT -> 0;
+			case CENTER -> (layout.blockWidth() - lineWidth) / 2f;
+			case RIGHT -> layout.blockWidth() - lineWidth;
+		};
 	}
 
 	private static int scaleAlpha(int argb, double opacity) {

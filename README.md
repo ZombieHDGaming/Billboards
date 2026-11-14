@@ -26,7 +26,16 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
 5. **Attach to an entity** (world overlays, under *Settings*): pick a nearby player or mob and the overlay follows it.
    Its position becomes an offset from an anchor (feet, centre, eyes or above the head), optionally turning with the
    entity. Attach a camera-facing text overlay with the *Above head* anchor for a custom name tag.
-6. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
+6. **Shapes** (*Add shape*): rectangles, rounded rectangles, ellipses, lines and arrows, with a solid or gradient
+   fill and an optional outline. Tinted and faded by the Appearance channel like everything else.
+7. **Fonts**: text uses Minecraft's font (including resource-pack fonts) or, via *Font: Choose...*, any TTF/OTF file,
+   which is copied into the project like images.
+8. **Groups** (*Add group*): a group's position, rotation, scale, opacity and tint apply to everything inside it, so a
+   lower third or a sign made of several pieces animates as one. Select a group before adding something to put it
+   inside, or use *Move into group* / *Move out of group* / *Ungroup* in the list's right-click menu (elements stay where
+   they are on screen). Clicking a group's contents in the viewport selects that piece; select the group itself in the
+   list.
+9. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
 
 | Channel | Values |
 |---|---|
@@ -45,9 +54,9 @@ original file doesn't break the replay.
 
 ## Status
 
-Milestones 1 and 2 of the [design](docs/DESIGN.md): images and text in world and screen space with keyframed
-transform, appearance and content; viewport selection, move/rotate/scale gizmos and entity attachment. Shapes,
-custom fonts, GIF/video, groups, blend modes, effects and presets are planned for later milestones.
+Milestones 1-3 of the [design](docs/DESIGN.md): images, text, shapes and groups in world and screen space with
+keyframed transform, appearance and content; custom fonts; viewport selection, move/rotate/scale gizmos and entity
+attachment. GIF/video, blend modes, effects and presets are planned for later milestones.
 
 ## Building
 
@@ -61,7 +70,8 @@ custom fonts, GIF/video, groups, blend modes, effects and presets are planned fo
 ```sh
 ./gradlew runClientGameTest   # records a replay with Flashback, opens it, adds overlays with keyframes and checks
                               # interpolation, screenshots at several ticks, saving/loading of keyframes, viewport
-                              # picking, gizmo maths and entity attachment; with xdotool installed it also clicks and
+                              # picking, gizmo maths, entity attachment and a lower third (group + shape + TTF text)
+                              # sliding in; with xdotool installed it also clicks and
                               # drags gizmos with the real mouse and saves full-window screenshots
 ./gradlew runExportCheck      # then: opens that replay and runs two real Flashback exports (a PNG sequence like a
                               # video export, and a "No GUI" screenshot) and checks the overlays in the output

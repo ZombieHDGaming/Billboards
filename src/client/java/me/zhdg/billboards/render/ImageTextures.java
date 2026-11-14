@@ -32,6 +32,7 @@ public final class ImageTextures {
 	private static final Map<String, Boolean> FAILED = new HashMap<>();
 	private static @Nullable UUID loadedFor = null;
 	private static @Nullable Entry placeholder = null;
+	private static @Nullable Entry white = null;
 
 	private ImageTextures() {
 	}
@@ -89,6 +90,16 @@ public final class ImageTextures {
 			placeholder = upload("billboards missing image", image);
 		}
 		return placeholder;
+	}
+
+	/** A 1x1 white texture, for untextured geometry such as shapes and text backgrounds. */
+	public static Entry white() {
+		if (white == null) {
+			BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+			image.setRGB(0, 0, 0xFFFFFFFF);
+			white = upload("billboards white", image);
+		}
+		return white;
 	}
 
 	public static void clear() {

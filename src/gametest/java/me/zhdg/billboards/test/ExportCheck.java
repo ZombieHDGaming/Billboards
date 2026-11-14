@@ -127,6 +127,11 @@ public class ExportCheck implements ClientModInitializer {
 		if (first != 0) throw new AssertionError("overlay should be invisible in the first exported frame");
 		if (last < 500) throw new AssertionError("overlay should be visible in the last exported frame");
 		if (screenshot < 500) throw new AssertionError("overlay should be visible in the screenshot export");
+		long lowerThirdFirst = countPixels(frames.getFirst(), 0xFF8000);
+		long lowerThirdLast = countPixels(frames.getLast(), 0xFF8000);
+		log("Lower third (group + shape + TTF text) pixels in first/last frame: " + lowerThirdFirst + " / " + lowerThirdLast);
+		if (lowerThirdFirst != 0) throw new AssertionError("lower third should be off screen in the first exported frame");
+		if (lowerThirdLast < 500) throw new AssertionError("lower third should have slid in by the last exported frame");
 
 		Path copy = Path.of(System.getProperty("billboards.exportCheck.copyTo", this.outputDir.toString()));
 		Files.createDirectories(copy);
@@ -137,11 +142,15 @@ public class ExportCheck implements ClientModInitializer {
 	}
 
 	private static long countPixels(Path path) throws Exception {
+		return countPixels(path, SCREEN_IMAGE_RGB);
+	}
+
+	private static long countPixels(Path path, int rgb) throws Exception {
 		BufferedImage image = ImageIO.read(path.toFile());
 		long count = 0;
 		for (int y = 0; y < image.getHeight(); y++) {
 			for (int x = 0; x < image.getWidth(); x++) {
-				if ((image.getRGB(x, y) & 0xFFFFFF) == SCREEN_IMAGE_RGB) {
+				if ((image.getRGB(x, y) & 0xFFFFFF) == rgb) {
 					count++;
 				}
 			}
