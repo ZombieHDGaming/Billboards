@@ -4,21 +4,41 @@ plugins {
 }
 
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
+	// Flashback is only published on Modrinth. It is "all rights reserved", so it is a
+	// compile-only dependency and is never bundled into the Billboards jar.
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
 }
 
 loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"modid" {
+		"billboards" {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
 		}
+	}
+}
+
+// In-game integration test (records a replay, adds overlays, checks screenshots and an export):
+//   ./gradlew runClientGameTest   (needs a display; on a headless machine use xvfb-run)
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "billboards-gametest"
+		enableGameTests = false
+		enableClientGameTests = true
+		eula = true
 	}
 }
 
@@ -29,6 +49,10 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Flashback: compile against it (incl. its shaded ImGui + JavaCV) and run it in dev, never ship it.
+	compileOnly "maven.modrinth:flashback:${project.flashback_version}"
+	localRuntime "maven.modrinth:flashback:${project.flashback_version}"
 }
 
 processResources {

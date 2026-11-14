@@ -10,7 +10,7 @@ Overlays render straight into Flashback's export, so they need no video editing 
 | Package | `me.zhdg.billboards` |
 | Target | Minecraft 26.3, Fabric, Flashback 0.43.x (built against 0.43.6) |
 | Java | 25 |
-| Status | Draft for review. Nothing is implemented yet. |
+| Status | Approved. Milestone 1 implemented. |
 
 ---
 
@@ -47,15 +47,19 @@ These come from reading Flashback 0.43.6 (`Moulberry/Flashback`), and they drive
    so custom types appear in the "add track" UI. However, `Keyframe.TypeAdapter` is a hardcoded `switch` on the
    `"type"` string and throws on unknown types. **A mixin is required** on `Keyframe.TypeAdapter` to
    (de)serialize `billboards:*` keyframes, or saving and loading the editor state breaks.
-3. **Keyframe handlers whitelist change classes.** `MinecraftKeyframeHandler.supportsKeyframeChange` checks a
-   fixed `Set`, so our change classes are skipped unless we **mixin `supportsKeyframeChange`** to also accept
-   `BillboardKeyframeChange` subclasses. The camera-path preview handlers (`CameraPath`) must keep rejecting them.
-4. **Only one track per change class is applied by default.** `EditorState.applyKeyframes` skips repeated
-   `KeyframeChange` classes unless `KeyframeType.allowApplyingDuplicateKeyframeChanges()` returns `true`.
-   Billboards needs many tracks of the same type (one per element), so our types return `true`.
-5. **`KeyframeHandler` has no generic "apply" hook**, only `applyFov`, `applyCameraPosition` and similar. Our
-   `KeyframeChange.apply(handler)` therefore writes into Billboards' own per-frame runtime state
-   (`BillboardsRuntime`) instead of calling the handler.
+3. **Flashback's apply loop doesn't fit stateless overlays.** `EditorState.applyKeyframes` only applies tracks a
+   handler whitelists, applies one track per change class, and `KeyframeTrack.createKeyframeChange` returns nothing
+   after a track's last keyframe (Flashback's own targets keep their last value). So Billboards' keyframe types
+   report that **no handler supports them**, and Billboards **evaluates its own tracks** each frame
+   (`KeyframeEvaluator`). It clamps the tick to the track's first..last keyframe and calls the same
+   `createKeyframeChange`, so every interpolation type and the real-time (tickrate) mapping behave exactly like
+   Flashback's tracks. No handler mixin is needed.
+4. **Time source.** In the editor this is `ReplayServer.getPartialReplayTick()` with the live editor state. While
+   exporting it is the export job's exact tick and its copy of the editor state, which keeps exports
+   frame-accurate. "Export screenshot" copies the state *without* keyframes, so in that case the live state is used.
+5. **Locks.** Scene access goes through the editor state's `StampedLock`. Billboards only uses `tryReadLock` and
+   `tryWriteLock` (via an accessor mixin), so it can never deadlock against the timeline holding the lock on the
+   same thread.
 6. **Tracks carry no custom metadata.** `KeyframeTrack` holds only `keyframeType`, `keyframesByTick`, `enabled`,
    `customName` and `customColour`. To tie a track to an element, **each keyframe stores its `elementId`**, and
    tracks are created from the Billboards panel or from the type's `createPopup()` (which asks which element).
@@ -69,7 +73,8 @@ These come from reading Flashback 0.43.6 (`Moulberry/Flashback`), and they drive
    `imgui.moulberry90.extension.imguizmo`), and `org.bytedeco.javacv` / FFmpeg 8.1 (unrelocated). Flashback's
    own `CatmullRom` and `Hermite` spline helpers provide interpolation that matches its other tracks.
 
-> Because of items 2, 3 and 5, Billboards depends on Flashback internals. Each Flashback update needs a quick
+> Because of items 2, 3 and 5, Billboards depends on Flashback internals (mixins: keyframe JSON adapter, editor-state
+> accessor, menu bar entry, window rendering). Each Flashback update needs a quick
 > compatibility check, which is why the dependency range is pinned to `<0.44`. Long term, it is worth proposing a
 > small public extension API upstream to Moulberry (registering keyframe (de)serializers and a generic handler
 > hook), which would remove most of the mixins.
@@ -112,7 +117,7 @@ independently:
 
 | Channel | Properties | Interpolation |
 |---|---|---|
-| **Transform** | position (`Vec3` world / `Vec2` normalized screen), rotation (quaternion; Euler in UI), scale (`Vec3`), size (`Vec2`) | Flashback types; rotation uses quaternion slerp/squad |
+| **Transform** | position (`Vec3` world / `Vec2` normalized screen), rotation (pitch/yaw/roll degrees), scale (`Vec2`) | Flashback types, per component. Euler angles (not quaternions) so 720° spins and multi-turn animations work. Size is a static setting; animate scale instead |
 | **Appearance** | opacity, tint/color (RGBA), visible (bool) | opacity & color interpolate (color in linear RGB); `visible` is always step |
 | **Content** | text string, crop rect, media time offset | text: step (with an optional "typewriter reveal" count that interpolates); crop interpolates |
 
@@ -160,10 +165,12 @@ Billboards registers **three keyframe types**, one per channel:
   `createHermiteInterpolatedChange` (Flashback's `Hermite`) and `renderEditKeyframe` (ImGui fields in Flashback's
   keyframe edit popup). All of Flashback's interpolation types and its real-time/tickrate mapping then work
   automatically.
-- `apply(handler)` writes the evaluated values into `BillboardsRuntime` for the current frame. Rendering combines
-  `base` with these values: whatever the channel's track provides wins, and the rest comes from `base`.
-- **Before the first keyframe** a channel uses its first keyframe's values, matching how Flashback holds tracks.
-  `visible` is the way to make an element appear partway through the replay.
+- `KeyframeEvaluator` produces the animated values for the current frame (see §2.3). A channel with a track uses the
+  track's value; a channel without one uses the element's `base` values.
+- **Before the first keyframe** a channel holds its first keyframe's values, and **after the last** it holds the
+  last one's. Use `visible` or opacity to make an element appear partway through the replay.
+- **Auto-key in the inspector:** on a channel that isn't animated, edits change the base value. Once a channel is
+  animated, edits add or update a keyframe at the cursor.
 - Disabling a track in Flashback disables that channel's animation for that element.
 - **Inspector keyframe buttons:** every animatable property has a ◆ button. Clicking it writes a keyframe at the
   timeline cursor into the element's channel track via `EditorScene.setKeyframe`, so it is undoable.
@@ -185,9 +192,17 @@ Billboards registers **three keyframe types**, one per channel:
 
 ### Screen-space
 
-- Rendered in **our own pass after the world and before the vanilla GUI**, so they appear in "No GUI" exports,
-  in transparent-background exports, and in the editor viewport, but never over Flashback's ImGui panels.
-- They are composited in the export framebuffer's pixel space from normalized coordinates (§3).
+- Rendered in **our own pass at the end of `GameRenderer.renderLevel`** (after the world, hand and screen
+  effects, before the HUD), so they appear in "No GUI" exports, in transparent-background exports, and in the editor
+  viewport, but never over Flashback's ImGui panels.
+- They use their own pixel-space orthographic projection, built from normalized coordinates (§3) and the main
+  render target's size, so camera bobbing, hurt-cam, shake and roll never move titles.
+
+### Shader
+
+Both passes draw `POSITION_TEX_COLOR` quads with a small Billboards shader (`texture × vertex colour`, with a
+grayscale variant for TTF glyph atlases). Vanilla's text shader discards pixels below 10% alpha, which would make text
+fades pop. Depth-tested overlays test against the world but don't write depth, so overlapping overlays never z-fight.
 
 ### Content renderers
 

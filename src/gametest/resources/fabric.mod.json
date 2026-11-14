@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "billboards-gametest",
+	"version": "1.0.0",
+	"name": "Billboards game tests",
+	"environment": "client",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"me.zhdg.billboards.test.BillboardsClientGameTest"
+		]
+	},
+	"depends": {
+		"billboards": "*"
+	}
+}
