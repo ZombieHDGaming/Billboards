@@ -4,7 +4,8 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
@@ -42,19 +43,80 @@ public final class OverlayBatch implements AutoCloseable {
 	private @Nullable Key currentKey = null;
 	private @Nullable BufferBuilder currentBuilder = null;
 
-	/** Returns a vertex consumer for quads drawn with this pipeline and texture; vertices are POSITION_TEX_COLOR. */
-	public BufferBuilder begin(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler) {
-		return this.begin(pipeline, texture, sampler, 0, 0);
+	/**
+	 * Returns a vertex consumer for quads drawn with this pipeline and texture. Callers write position, UV and
+	 * colour; every vertex gets {@code light} (packed block/sky light), which lit pipelines use and others ignore.
+	 */
+	public VertexConsumer begin(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler, int light) {
+		return this.begin(pipeline, texture, sampler, 0, 0, light);
 	}
 
-	public BufferBuilder begin(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler, float blurU, float blurV) {
+	public VertexConsumer begin(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler, float blurU, float blurV, int light) {
 		Key key = new Key(pipeline, texture, sampler, blurU, blurV);
 		if (!key.equals(this.currentKey) || this.currentBuilder == null) {
 			this.finishCurrent();
 			this.currentKey = key;
-			this.currentBuilder = new BufferBuilder(this.bytes, PrimitiveTopology.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+			this.currentBuilder = new BufferBuilder(this.bytes, PrimitiveTopology.QUADS, pipeline.getVertexFormatBinding(0));
 		}
-		return this.currentBuilder;
+		return new LitVertices(this.currentBuilder, light);
+	}
+
+	/** Adds the light level to every vertex (a no-op for vertex formats without one). */
+	private record LitVertices(BufferBuilder builder, int light) implements VertexConsumer {
+		@Override
+		public VertexConsumer addVertex(float x, float y, float z) {
+			this.builder.addVertex(x, y, z);
+			this.builder.setLight(this.light);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setColor(int r, int g, int b, int a) {
+			this.builder.setColor(r, g, b, a);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setColor(int color) {
+			this.builder.setColor(color);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setUv(float u, float v) {
+			this.builder.setUv(u, v);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setUv1(int u, int v) {
+			this.builder.setUv1(u, v);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setUv2(int u, int v) {
+			this.builder.setUv2(u, v);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setUv3(float u, float v) {
+			this.builder.setUv3(u, v);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setNormal(float x, float y, float z) {
+			this.builder.setNormal(x, y, z);
+			return this;
+		}
+
+		@Override
+		public VertexConsumer setLineWidth(float width) {
+			this.builder.setLineWidth(width);
+			return this;
+		}
 	}
 
 	private void finishCurrent() {
@@ -72,14 +134,14 @@ public final class OverlayBatch implements AutoCloseable {
 	}
 
 	/** Draws everything into the main render target. Vertices must already be in view space (model-view is identity). */
-	public void draw(String label, boolean useDepthBuffer) {
+	public void draw(String label) {
 		this.finishCurrent();
 		if (this.draws.isEmpty()) {
 			return;
 		}
 
 		RenderTarget target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
-		GpuTextureView depthView = useDepthBuffer && target.hasDepth() ? target.getDepthTextureView() : null;
+		GpuTextureView depthView = target.hasDepth() ? target.getDepthTextureView() : null;
 		GpuBufferSlice transforms = RenderSystem.getDynamicUniforms().writeTransform(new Matrix4f());
 
 		try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
@@ -98,6 +160,10 @@ public final class OverlayBatch implements AutoCloseable {
 					pass.setUniform("DynamicTransforms", transforms);
 				}
 				pass.setUniform("Sampler0", draw.key().texture(), draw.key().sampler());
+				if (OverlayPipelines.isLit(draw.key().pipeline())) {
+					pass.setUniform("Sampler2", Minecraft.getInstance().gameRenderer.lightmap(),
+						RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));
+				}
 				pass.setVertexBuffer(0, draw.vertices().slice());
 				pass.setIndexBuffer(indices.getBuffer(draw.indexCount()), indices.type());
 				pass.drawIndexed(draw.indexCount(), 1, 0, 0, 0);

@@ -8,12 +8,10 @@ import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.ProjectManager;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
-import org.joml.Quaternionfc;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 
@@ -115,7 +113,7 @@ public final class SceneFrame {
 				return false;
 			}
 			Node parent = this.parent(current);
-			if (parent == null && current.element().space == Space.WORLD && !ElementGeometry.isPlaced(current.element())) {
+			if (parent == null && !ElementGeometry.isPlaced(current.element())) {
 				return false;
 			}
 			current = parent;
@@ -123,18 +121,18 @@ public final class SceneFrame {
 		return node.appearance().get(Channel.VISIBLE) >= 0.5 && node.appearance().get(Channel.OPACITY) > 0;
 	}
 
-	/** Everything of a space that draws something this frame, in outliner order (groups themselves draw nothing). */
-	public List<Node> drawables(Space space) {
+	/** Everything that draws something this frame, in outliner order (groups themselves draw nothing). */
+	public List<Node> drawables() {
 		List<Node> result = new ArrayList<>();
 		for (Node node : this.order) {
-			if (node.element().space == space && node.element().type != ElementType.GROUP && this.isShown(node)) {
+			if (node.element().type != ElementType.GROUP && this.isShown(node)) {
 				result.add(node);
 			}
 		}
 		return result;
 	}
 
-	/** The layer of the top-level element a node is in, which decides screen draw order. */
+	/** The layer of the top-level element a node is in, which decides the draw order of see-through elements. */
 	public int rootLayer(Node node) {
 		Node current = node;
 		for (int i = 0; i <= MAX_DEPTH; i++) {
@@ -152,22 +150,22 @@ public final class SceneFrame {
 	// ------------------------------------------------------------------------------------------------
 
 	/** Camera-relative model matrix (see {@link ElementGeometry#worldModel}), including the groups the node is in. */
-	public @Nullable Matrix4f worldModel(Node node, Vec3 cameraPos, Quaternionfc cameraOrientation) {
-		return this.worldModel(node, cameraPos, cameraOrientation, 0);
+	public @Nullable Matrix4f worldModel(Node node, OverlayRenderer.SceneCamera camera) {
+		return this.worldModel(node, camera, 0);
 	}
 
 	/** The model matrix of the group a node is in, or null at the top level. */
-	public @Nullable Matrix4f parentWorldModel(Node node, Vec3 cameraPos, Quaternionfc cameraOrientation) {
+	public @Nullable Matrix4f parentWorldModel(Node node, OverlayRenderer.SceneCamera camera) {
 		Node parent = this.parent(node);
-		return parent == null ? null : this.worldModel(parent, cameraPos, cameraOrientation, 0);
+		return parent == null ? null : this.worldModel(parent, camera, 0);
 	}
 
-	private @Nullable Matrix4f worldModel(Node node, Vec3 cameraPos, Quaternionfc cameraOrientation, int depth) {
+	private @Nullable Matrix4f worldModel(Node node, OverlayRenderer.SceneCamera camera, int depth) {
 		Node parent = this.parent(node);
 		if (parent == null || depth > MAX_DEPTH) {
-			return ElementGeometry.worldModel(node.element(), node.transform(), cameraPos, cameraOrientation);
+			return ElementGeometry.worldModel(node.element(), node.transform(), camera);
 		}
-		Matrix4f parentModel = this.worldModel(parent, cameraPos, cameraOrientation, depth + 1);
+		Matrix4f parentModel = this.worldModel(parent, camera, depth + 1);
 		if (parentModel == null) {
 			return null;
 		}
@@ -179,58 +177,21 @@ public final class SceneFrame {
 				.rotate(ElementGeometry.rotation(t))
 				.scale(t.getFloat(Channel.SCALE_X), t.getFloat(Channel.SCALE_Y), 1);
 		}
-		// Camera-facing children: placed by the group, but oriented towards the camera like top-level elements.
+		// Billboarded children: placed by the group, but turned towards the camera like top-level elements.
 		Vector4f position = parentModel.transform(new Vector4f(localPosition, 1));
 		Vector3f parentScale = parentModel.getScale(new Vector3f());
-		Matrix4f matrix = new Matrix4f().translate(position.x, position.y, position.z);
-		if (node.element().facing == Facing.FACE_CAMERA) {
-			matrix.rotate(cameraOrientation);
-		} else {
-			matrix.rotateY((float) Math.atan2(-position.x, -position.z));
-		}
-		return matrix.rotate(ElementGeometry.rotation(t))
+		return new Matrix4f().translate(position.x, position.y, position.z)
+			.rotate(ElementGeometry.orientation(node.element(), t, camera, 0))
 			.scale(t.getFloat(Channel.SCALE_X) * parentScale.x, t.getFloat(Channel.SCALE_Y) * parentScale.y, 1);
 	}
 
 	/** Where a node's pivot is in the world, or null if it can't be placed. */
-	public @Nullable Vec3 worldPosition(Node node, Vec3 cameraPos, Quaternionfc cameraOrientation) {
-		Matrix4f model = this.worldModel(node, cameraPos, cameraOrientation);
+	public @Nullable Vec3 worldPosition(Node node, OverlayRenderer.SceneCamera camera) {
+		Matrix4f model = this.worldModel(node, camera);
 		if (model == null) {
 			return null;
 		}
 		Vector3f translation = model.getTranslation(new Vector3f());
-		return cameraPos.add(translation.x, translation.y, translation.z);
-	}
-
-	// ------------------------------------------------------------------------------------------------
-	// Screen
-	// ------------------------------------------------------------------------------------------------
-
-	/**
-	 * Model matrix in frame pixels (origin top-left, y down) for a frame of the given size, including groups.
-	 * Each element is {@code translate(x * width, -y * height) · roll · scale} in its parent's y-up frame; the top
-	 * level's parent just flips y.
-	 */
-	public Matrix4f screenModel(Node node, float width, float height) {
-		return this.parentScreenModel(node, width, height).mul(screenLocal(node.transform(), width, height));
-	}
-
-	public Matrix4f parentScreenModel(Node node, float width, float height) {
-		Matrix4f matrix = new Matrix4f().scale(1, -1, 1);
-		List<Node> chain = new ArrayList<>();
-		for (Node parent = this.parent(node); parent != null && chain.size() <= MAX_DEPTH; parent = this.parent(parent)) {
-			chain.addFirst(parent);
-		}
-		for (Node parent : chain) {
-			matrix.mul(screenLocal(parent.transform(), width, height));
-		}
-		return matrix;
-	}
-
-	public static Matrix4f screenLocal(ChannelValues transform, float width, float height) {
-		return new Matrix4f()
-			.translate(transform.getFloat(Channel.X) * width, -transform.getFloat(Channel.Y) * height, 0)
-			.rotateZ((float) Math.toRadians(transform.get(Channel.ROLL)))
-			.scale(transform.getFloat(Channel.SCALE_X), transform.getFloat(Channel.SCALE_Y), 1);
+		return camera.position().add(translation.x, translation.y, translation.z);
 	}
 }

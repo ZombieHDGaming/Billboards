@@ -11,12 +11,8 @@ import com.moulberry.flashback.keyframe.interpolation.InterpolationType;
 import com.moulberry.flashback.spline.CatmullRom;
 import com.moulberry.flashback.spline.Hermite;
 import me.zhdg.billboards.editor.ChannelEditor;
-import me.zhdg.billboards.model.BillboardProject;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
-import me.zhdg.billboards.model.Element;
-import me.zhdg.billboards.model.Space;
-import me.zhdg.billboards.project.ProjectManager;
 import org.joml.Vector3d;
 
 import java.util.HashMap;
@@ -113,16 +109,9 @@ public class ChannelKeyframe extends Keyframe {
 
 	@Override
 	public void renderEditKeyframe(Consumer<Consumer<Keyframe>> update) {
-		Space space = Space.WORLD;
-		BillboardProject project = ProjectManager.getCurrent();
-		Element element = project == null ? null : project.get(this.elementId);
-		if (element != null) {
-			space = element.space;
-		}
-
 		// Flashback applies the update to every selected keyframe of this class, which can include other channels.
 		Channel channel = this.channel;
-		ChannelEditor.render(this.values, space,
+		ChannelEditor.render(this.values,
 			(component, value) -> update.accept(keyframe -> {
 				if (keyframe instanceof ChannelKeyframe other && other.channel == channel) {
 					other.values.set(component, value);

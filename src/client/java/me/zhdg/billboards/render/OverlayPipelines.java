@@ -8,6 +8,8 @@ import com.mojang.renderpearl.api.pipeline.DepthStencilState;
 import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import me.zhdg.billboards.Billboards;
 import me.zhdg.billboards.model.BlendMode;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import net.minecraft.client.renderer.BindGroupLayouts;
 import net.minecraft.client.renderer.RenderPipelines;
 
 import java.util.HashMap;
@@ -16,9 +18,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Pipelines for drawing overlays: textured quads ({@code POSITION_TEX_COLOR}), no face culling (overlays are
- * visible from both sides), and Billboards' own shader, which has no alpha cut-off. Created on first use for each
- * combination of depth testing, shader variant and blend mode.
+ * Pipelines for drawing overlays: textured quads ({@code POSITION_TEX_COLOR}, plus the light level for lit
+ * pipelines), no face culling (overlays are visible from both sides), and Billboards' own shader, which has no alpha
+ * cut-off. Created on first use for each combination of depth testing, lighting, shader variant and blend mode.
  */
 public final class OverlayPipelines {
 
@@ -46,7 +48,7 @@ public final class OverlayPipelines {
 	/** Depth-tested against the world but doesn't write depth, so overlapping overlays never z-fight. */
 	private static final DepthStencilState TEST_NO_WRITE = new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false);
 
-	private record Key(boolean depthTest, Variant variant, BlendMode blend) {
+	private record Key(boolean depthTest, boolean lit, Variant variant, BlendMode blend) {
 	}
 
 	private static final Map<Key, RenderPipeline> PIPELINES = new HashMap<>();
@@ -54,16 +56,20 @@ public final class OverlayPipelines {
 	private OverlayPipelines() {
 	}
 
-	public static RenderPipeline get(boolean depthTest, boolean grayscale) {
-		return get(depthTest, grayscale ? Variant.GRAYSCALE : Variant.NORMAL, BlendMode.NORMAL);
+	/**
+	 * @param lit multiply the colour by the lightmap at each vertex's light level, like vanilla text displays
+	 */
+	public static RenderPipeline get(boolean depthTest, boolean lit, Variant variant, BlendMode blend) {
+		return PIPELINES.computeIfAbsent(new Key(depthTest, lit, variant, blend), OverlayPipelines::create);
 	}
 
-	public static RenderPipeline get(boolean depthTest, Variant variant, BlendMode blend) {
-		return PIPELINES.computeIfAbsent(new Key(depthTest, variant, blend), OverlayPipelines::create);
+	/** Whether a pipeline from {@link #get} samples the lightmap (bound as {@code Sampler2}). */
+	public static boolean isLit(RenderPipeline pipeline) {
+		return pipeline.getVertexFormatBinding(0) == DefaultVertexFormat.POSITION_TEX_LIGHTMAP_COLOR;
 	}
 
 	private static RenderPipeline create(Key key) {
-		String name = "overlay_" + (key.depthTest() ? "depth" : "no_depth") + "_" + key.variant().name().toLowerCase(Locale.ROOT)
+		String name = "overlay_" + (key.depthTest() ? "depth" : "no_depth") + (key.lit() ? "_lit" : "") + "_" + key.variant().name().toLowerCase(Locale.ROOT)
 			+ "_" + key.blend().name().toLowerCase(Locale.ROOT);
 		RenderPipeline.Builder builder = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
 			.withLocation(Billboards.id("pipeline/" + name))
@@ -72,6 +78,11 @@ public final class OverlayPipelines {
 			.withCull(false)
 			.withDepthStencilState(key.depthTest() ? Optional.of(TEST_NO_WRITE) : Optional.empty())
 			.withColorTargetState(new ColorTargetState(blendFunction(key.blend())));
+		if (key.lit()) {
+			builder.withBindGroupLayout(BindGroupLayouts.SAMPLER2)
+				.withVertexBinding(0, DefaultVertexFormat.POSITION_TEX_LIGHTMAP_COLOR)
+				.withShaderDefine("LIT");
+		}
 		for (String define : key.variant().defines) {
 			builder.withShaderDefine(define);
 		}

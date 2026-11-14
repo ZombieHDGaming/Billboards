@@ -1,15 +1,14 @@
 package me.zhdg.billboards.model;
 
 /**
- * Optional effects drawn with an element. Distances are in the element's size units (blocks in the world, fractions
- * of the frame height on screen).
+ * Optional effects drawn with an element. Distances are in blocks.
  */
 public class Effects {
 
 	public boolean shadow = false;
 	/** ARGB; the alpha is the shadow's strength. */
 	public int shadowColor = 0xB0000000;
-	/** Offset to the right and down, as seen on screen. */
+	/** Offset to the right and down, as seen from the camera. */
 	public float shadowOffsetX = 0.006f;
 	public float shadowOffsetY = 0.006f;
 	/** How far the shadow's edge spreads; 0 for a hard shadow. */

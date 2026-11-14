@@ -68,7 +68,7 @@ public class BillboardProject {
 		for (Element element : this.elements) {
 			if (element.parentId != null) {
 				Element parent = this.get(element.parentId);
-				if (parent == null || parent.type != ElementType.GROUP || parent.space != element.space || this.isWithin(parent, element.id)) {
+				if (parent == null || parent.type != ElementType.GROUP || this.isWithin(parent, element.id)) {
 					element.parentId = null;
 				}
 			}

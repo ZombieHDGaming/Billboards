@@ -15,7 +15,6 @@ import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.OverlayRenderer;
@@ -54,32 +53,33 @@ final class ViewportChecks {
 
 	private static void checkPicking(ClientGameTestContext context, UUID screenId, UUID worldId) {
 		context.runOnClient(minecraft -> {
-			// The screen image is centred at (0.75, 0.75) of the frame.
-			check(screenId.equals(ViewportPicker.pickScreen(0.75f, 0.75f)), "clicking the screen image's centre should pick it");
-			check(ViewportPicker.pickScreen(0.05f, 0.95f) == null, "clicking empty screen space should pick nothing");
+			// The fade image is centred at (0.75, 0.75) of the frame.
+			OverlayRenderer.SceneCamera camera = OverlayRenderer.lastCamera();
+			Vec3 fade = InFront.at(0.75f, 0.75f).subtract(camera.position()).normalize();
+			check(screenId.equals(ViewportPicker.pickWorld(fade)), "clicking the fade image's centre should pick it");
+			Vec3 empty = InFront.at(0.05f, 0.95f).subtract(camera.position()).normalize();
+			check(ViewportPicker.pickWorld(empty) == null, "clicking empty space should pick nothing");
 
 			BillboardProject project = ProjectManager.getCurrent();
 			Element world = project.get(worldId);
-			OverlayRenderer.SceneCamera camera = OverlayRenderer.lastCamera();
 			Vec3 target = ElementGeometry.worldPosition(world, world.transform);
 			Vec3 towards = target.subtract(camera.position()).normalize();
 			check(worldId.equals(ViewportPicker.pickWorld(towards)), "a ray through the world image's centre should pick it");
 			check(ViewportPicker.pickWorld(towards.scale(-1)) == null, "a ray pointing away should pick nothing");
-			log("Picking: screen and world overlays picked correctly");
+			log("Picking: overlays picked correctly along the mouse ray");
 		});
 	}
 
 	private static void checkGizmoMaths() {
 		OverlayRenderer.SceneCamera camera = OverlayRenderer.lastCamera();
 		Element element = new Element();
-		element.space = Space.WORLD;
 		element.facing = Facing.FIXED;
 		element.transform.set(Channel.X, camera.position().x + 2);
 		element.transform.set(Channel.Y, camera.position().y);
 		element.transform.set(Channel.Z, camera.position().z + 3);
 		element.transform.set(Channel.YAW, 350); // > 0..360 range on purpose: edits must keep it near here
 		ChannelValues start = element.transform;
-		Matrix4f model = ElementGeometry.worldModel(element, start, camera.position(), camera.orientation());
+		Matrix4f model = ElementGeometry.worldModel(element, start, camera);
 
 		ViewportTools.Tool previous = ViewportTools.tool;
 		try {
@@ -98,17 +98,36 @@ final class ViewportChecks {
 			ChannelValues scaled = ViewportTools.applyWorld(element, start, new Matrix4f(model).scale(2, 0.5f, 1), camera);
 			check(near(scaled.get(Channel.SCALE_X), 2) && near(scaled.get(Channel.SCALE_Y), 0.5), "scaling: " + scaled.toJson());
 
-			ChannelValues screen = new ChannelValues(Channel.TRANSFORM);
-			screen.set(Channel.X, 0.25);
-			screen.set(Channel.Y, 0.4);
-			screen.set(Channel.ROLL, 10);
-			Matrix4f screenModel = ViewportTools.screenGizmoModel(screen, 800, 450);
-			ViewportTools.tool = ViewportTools.Tool.MOVE;
-			ChannelValues screenMoved = ViewportTools.applyScreen(screen, new Matrix4f().translate(80, -45, 0).mul(screenModel), 800, 450);
-			check(near(screenMoved.get(Channel.X), 0.35) && near(screenMoved.get(Channel.Y), 0.5), "screen move: " + screenMoved.toJson());
+
+			// Billboarded elements: the gizmo only changes the axes the camera leaves to them.
 			ViewportTools.tool = ViewportTools.Tool.ROTATE;
-			ChannelValues screenRotated = ViewportTools.applyScreen(screen, new Matrix4f(screenModel).rotateZ((float) Math.toRadians(20)), 800, 450);
-			check(near(screenRotated.get(Channel.ROLL), 30), "screen rotate: " + screenRotated.get(Channel.ROLL));
+			element.facing = Facing.VERTICAL;
+			element.transform.set(Channel.PITCH, 20);
+			Matrix4f vertical = ElementGeometry.worldModel(element, start, camera);
+			ChannelValues tilted = ViewportTools.applyWorld(element, start, new Matrix4f(vertical).rotateX((float) Math.toRadians(15)), camera);
+			check(near(tilted.get(Channel.PITCH), 35) && near(tilted.get(Channel.YAW), 350), "vertical billboard pitch: " + tilted.toJson());
+			element.facing = Facing.HORIZONTAL;
+			Matrix4f horizontal = ElementGeometry.worldModel(element, start, camera);
+			ChannelValues turned = ViewportTools.applyWorld(element, start, new Matrix4f(horizontal).rotateZ((float) Math.toRadians(-25)), camera);
+			check(near(turned.get(Channel.ROLL), -25) && near(turned.get(Channel.YAW), 350) && near(turned.get(Channel.PITCH), 20),
+				"horizontal billboard roll: " + turned.toJson());
+			element.facing = Facing.CENTER;
+			Matrix4f center = ElementGeometry.worldModel(element, start, camera);
+			ChannelValues rolled = ViewportTools.applyWorld(element, start, new Matrix4f(center).rotateZ((float) Math.toRadians(40)), camera);
+			check(near(rolled.get(Channel.ROLL), 40), "center billboard roll: " + rolled.toJson());
+
+			// Rotating a non-uniformly scaled element must not mix the scale into the angles.
+			element.facing = Facing.FIXED;
+			element.transform.set(Channel.PITCH, 0);
+			element.transform.set(Channel.SCALE_X, 2);
+			element.transform.set(Channel.SCALE_Y, 0.5);
+			// What the gizmo hands back after turning it 30°: rotation applied inside the scale, as ImGuizmo does.
+			ChannelValues target = start.copy();
+			target.set(Channel.YAW, 380);
+			Matrix4f turnedScaled = ElementGeometry.worldModel(element, target, camera);
+			ChannelValues scaledRotated = ViewportTools.applyWorld(element, start, turnedScaled, camera);
+			check(near(scaledRotated.get(Channel.YAW), 380) && near(scaledRotated.get(Channel.PITCH), 0) && near(scaledRotated.get(Channel.ROLL), 0),
+				"rotating a scaled element: " + scaledRotated.toJson());
 		} finally {
 			ViewportTools.tool = previous;
 		}
@@ -123,8 +142,7 @@ final class ViewportChecks {
 			labelId = label.id;
 			label.name = "Player label";
 			label.type = ElementType.TEXT;
-			label.space = Space.WORLD;
-			label.facing = Facing.FACE_CAMERA;
+			label.facing = Facing.CENTER;
 			label.depthTest = false;
 			label.content.text = "Player";
 			label.attachEntity = recorded.getUUID();
@@ -181,19 +199,19 @@ final class ViewportChecks {
 		context.waitTicks(5);
 		desktopScreenshot(context, "desktop-before-click");
 
-		// 1. Clicking the screen image in the viewport selects it.
+		// 1. Clicking the fade image in the viewport selects it.
 		int[] centre = desktopPoint(context, 0.75f, 0.75f);
 		xdotool("mousemove", centre[0], centre[1]);
 		context.waitTicks(3);
 		xdotool("click", "1");
 		context.waitTicks(5);
 		boolean selected = context.computeOnClient(minecraft -> Selection.is(screenId));
-		log("Clicked the screen image at " + centre[0] + "," + centre[1] + "; selected: " + selected);
-		check(selected, "clicking the screen image in the viewport should select it");
+		log("Clicked the fade image at " + centre[0] + "," + centre[1] + "; selected: " + selected);
+		check(selected, "clicking the fade image in the viewport should select it");
 		desktopScreenshot(context, "desktop-selected");
 
 		// 2. Dragging the gizmo's X arrow moves it. Find the arrow by hovering along +X from the centre.
-		double startX = context.computeOnClient(minecraft -> ProjectManager.getCurrent().get(screenId).transform.get(Channel.X));
+		double startX = context.computeOnClient(minecraft -> ViewportTools.frameFraction(worldPositionOf(screenId))[0]);
 		int[] handle = null;
 		for (int offset = 8; offset <= 200 && handle == null; offset += 4) {
 			xdotool("mousemove", centre[0] + offset, centre[1]);
@@ -212,12 +230,12 @@ final class ViewportChecks {
 		desktopScreenshot(context, "desktop-dragging");
 		xdotool("mouseup", "1");
 		context.waitTicks(5);
-		double endX = context.computeOnClient(minecraft -> ProjectManager.getCurrent().get(screenId).transform.get(Channel.X));
-		log("Dragged the gizmo 100px right: x " + startX + " -> " + endX);
-		check(endX > startX + 0.03, "dragging the gizmo should move the overlay right");
+		double endX = context.computeOnClient(minecraft -> ViewportTools.frameFraction(worldPositionOf(screenId))[0]);
+		log("Dragged the gizmo 100px right: frame x " + startX + " -> " + endX);
+		check(endX > startX + 0.03, "dragging the gizmo should move the overlay right on screen");
 		desktopScreenshot(context, "desktop-after-drag");
 
-		// 3. The same for a world overlay: click it, then drag its gizmo; it should move in the world.
+		// 3. The same for the world image in the middle of the frame.
 		float[] worldFraction = context.computeOnClient(minecraft -> {
 			Element world = ProjectManager.getCurrent().get(worldId);
 			return ViewportTools.frameFraction(ElementGeometry.worldPosition(world, world.transform));

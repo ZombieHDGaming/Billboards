@@ -27,26 +27,25 @@ final class ShapeTessellator {
 	}
 
 	/**
-	 * @param unit    size multiplier (see {@link ElementGeometry})
 	 * @param tint    ARGB multiplied into every colour (the element's appearance: tint and opacity)
 	 */
-	static void draw(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float unit, int tint) {
-		draw(buffer, pose, element, bounds, unit, colour -> multiply(colour, tint));
+	static void draw(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, int tint) {
+		draw(buffer, pose, element, bounds, colour -> multiply(colour, tint));
 	}
 
-	static void draw(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float unit, ColourMapper tint) {
-		float stroke = Math.max(0, element.strokeWidth * unit);
+	static void draw(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, ColourMapper tint) {
+		float stroke = Math.max(0, element.strokeWidth);
 		switch (element.shapeKind) {
 			case LINE -> drawLine(buffer, pose, element, bounds, stroke, tint);
 			case ARROW -> drawArrow(buffer, pose, element, bounds, stroke, tint);
 			default -> {
-				List<float[]> outer = contour(element.shapeKind, bounds.minX(), bounds.minY(), bounds.maxX(), bounds.maxY(), element.cornerRadius * unit);
+				List<float[]> outer = contour(element.shapeKind, bounds.minX(), bounds.minY(), bounds.maxX(), bounds.maxY(), element.cornerRadius);
 				fill(buffer, pose, element, bounds, outer, tint);
 				float width = bounds.maxX() - bounds.minX();
 				float height = bounds.maxY() - bounds.minY();
 				if (stroke > 0 && stroke * 2 < Math.min(width, height)) {
 					List<float[]> inner = contour(element.shapeKind, bounds.minX() + stroke, bounds.minY() + stroke,
-						bounds.maxX() - stroke, bounds.maxY() - stroke, Math.max(0, element.cornerRadius * unit - stroke));
+						bounds.maxX() - stroke, bounds.maxY() - stroke, Math.max(0, element.cornerRadius - stroke));
 					ring(buffer, pose, outer, inner, tint.map(element.strokeColor));
 				} else if (stroke > 0) {
 					fillSolid(buffer, pose, outer, tint.map(element.strokeColor));

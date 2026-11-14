@@ -8,7 +8,6 @@ import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.ShapeKind;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.model.TextAlign;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.ProjectManager;
@@ -51,6 +50,8 @@ final class EffectsChecks {
 		context.runOnClient(minecraft -> {
 			BillboardProject project = ProjectManager.getCurrent();
 			UUID replayId = ProjectManager.currentReplayId();
+			// Sizes and distances below are fractions of the frame height.
+			float h = InFront.frameHeight();
 
 			// Blend modes: a square of each mode half over an opaque backdrop.
 			BlendMode[] modes = {BlendMode.ADDITIVE, BlendMode.MULTIPLY, BlendMode.SCREEN};
@@ -69,8 +70,8 @@ final class EffectsChecks {
 			Element shadowed = rectangle("Shadowed square", 0x2060A0, 0.88f, 0.48f, 0.06f, 0.06f, 12);
 			shadowed.effects.shadow = true;
 			shadowed.effects.shadowColor = 0xFF000000 | SHADOW;
-			shadowed.effects.shadowOffsetX = 0.02f;
-			shadowed.effects.shadowOffsetY = 0.02f;
+			shadowed.effects.shadowOffsetX = 0.02f * h;
+			shadowed.effects.shadowOffsetY = 0.02f * h;
 			shadowed.effects.shadowSoftness = 0;
 			project.elements.add(shadowed);
 
@@ -78,19 +79,19 @@ final class EffectsChecks {
 			Element text = new Element();
 			text.name = "Outlined text";
 			text.type = ElementType.TEXT;
-			text.space = Space.SCREEN;
 			text.content.text = "FX";
-			text.fontSize = 0.1f;
 			text.align = TextAlign.CENTER;
 			text.textShadow = false;
-			text.transform.set(Channel.X, 0.42);
-			text.transform.set(Channel.Y, 0.4);
+			text.backgroundColor = 0;
+			text.pivotY = 0.5f;
+			InFront.place(text, 0.42f, 0.4f);
+			InFront.scale(text, InFront.textScale(0.1f));
 			text.effects.outline = true;
 			text.effects.outlineColor = 0xFF000000 | OUTLINE;
-			text.effects.outlineWidth = 0.006f;
+			text.effects.outlineWidth = 0.006f * h;
 			text.effects.glow = true;
 			text.effects.glowColor = 0xFFFFD040;
-			text.effects.glowRadius = 0.02f;
+			text.effects.glowRadius = 0.02f * h;
 			text.layer = 12;
 			project.elements.add(text);
 
@@ -98,17 +99,15 @@ final class EffectsChecks {
 			Element blurred = new Element();
 			blurred.name = "Blurred image";
 			blurred.type = ElementType.IMAGE;
-			blurred.space = Space.SCREEN;
 			try {
 				blurred.assetId = AssetStore.importFile(replayId, project, image);
 			} catch (IOException e) {
 				throw new java.io.UncheckedIOException(e);
 			}
-			blurred.width = 0.12f;
-			blurred.height = 0.12f;
-			blurred.transform.set(Channel.X, 0.6);
-			blurred.transform.set(Channel.Y, 0.4);
-			blurred.effects.blur = 0.02f;
+			blurred.width = 0.12f * h;
+			blurred.height = 0.12f * h;
+			InFront.place(blurred, 0.6f, 0.4f);
+			blurred.effects.blur = 0.02f * h;
 			blurred.layer = 12;
 			project.elements.add(blurred);
 			project.markDirty();
@@ -142,14 +141,12 @@ final class EffectsChecks {
 		Element element = new Element();
 		element.name = name;
 		element.type = ElementType.SHAPE;
-		element.space = Space.SCREEN;
 		element.shapeKind = ShapeKind.RECTANGLE;
 		element.fillColor = 0xFF000000 | rgb;
-		element.width = width;
-		element.height = height;
+		element.width = width * InFront.frameHeight();
+		element.height = height * InFront.frameHeight();
 		element.layer = layer;
-		element.transform.set(Channel.X, x);
-		element.transform.set(Channel.Y, y);
+		InFront.place(element, x, y);
 		return element;
 	}
 

@@ -14,11 +14,11 @@ import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Gradient;
 import me.zhdg.billboards.model.ShapeKind;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.model.TextAlign;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.CustomFont;
+import me.zhdg.billboards.render.OverlayRenderer;
 import me.zhdg.billboards.render.SceneFrame;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.Minecraft;
@@ -32,8 +32,8 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 /**
- * Milestone 3: a screen-space lower third built from a group containing a shape and TTF text, sliding in and fading
- * in as one; plus reparenting keeping elements in place.
+ * Milestone 3: a lower third built from a group containing a shape and TTF text, held in front of the camera and
+ * sliding in and fading in as one; plus reparenting keeping elements in place.
  */
 final class LowerThirdChecks {
 
@@ -90,27 +90,29 @@ final class LowerThirdChecks {
 		UUID replayId = ProjectManager.currentReplayId();
 		EditorState editorState = PlaybackTime.liveEditorState();
 
+		float h = InFront.frameHeight();
+		float w = InFront.frameWidth();
+
 		Element group = new Element();
 		groupId = group.id;
 		group.name = "Lower third";
 		group.type = ElementType.GROUP;
-		group.space = Space.SCREEN;
 		group.layer = 5;
-		group.transform.set(Channel.X, 0.05);
-		group.transform.set(Channel.Y, 0.85);
+		InFront.place(group, 0.05f, 0.85f);
 		project.elements.add(group);
 
+		// Children face the camera with the group (they're fixed in its frame); sizes are fractions of the frame height.
 		Element shape = new Element();
 		shape.name = "Lower third background";
 		shape.type = ElementType.SHAPE;
-		shape.space = Space.SCREEN;
 		shape.parentId = group.id;
+		shape.depthTest = false;
 		shape.shapeKind = ShapeKind.ROUNDED_RECTANGLE;
 		shape.gradient = Gradient.NONE;
 		shape.fillColor = 0xFF000000 | SHAPE_RGB;
-		shape.width = 0.9f;
-		shape.height = 0.14f;
-		shape.cornerRadius = 0.03f;
+		shape.width = 0.9f * h;
+		shape.height = 0.14f * h;
+		shape.cornerRadius = 0.03f * h;
 		shape.pivotX = 0;
 		shape.pivotY = 0.5f;
 		project.elements.add(shape);
@@ -118,31 +120,32 @@ final class LowerThirdChecks {
 		Element accent = new Element();
 		accent.name = "Accent line";
 		accent.type = ElementType.SHAPE;
-		accent.space = Space.SCREEN;
 		accent.parentId = group.id;
+		accent.depthTest = false;
 		accent.shapeKind = ShapeKind.LINE;
 		accent.fillColor = 0xFF1E64C8;
 		accent.fillColor2 = 0xFFFFFFFF;
 		accent.gradient = Gradient.HORIZONTAL;
-		accent.width = 0.9f;
-		accent.height = 0.02f;
-		accent.strokeWidth = 0.008f;
+		accent.width = 0.9f * h;
+		accent.height = 0.02f * h;
+		accent.strokeWidth = 0.008f * h;
 		accent.pivotX = 0;
-		accent.transform.set(Channel.Y, 0.08);
+		accent.transform.set(Channel.Y, -0.08 * h);
 		project.elements.add(accent);
 
 		Element text = new Element();
 		text.name = "Lower third text";
 		text.type = ElementType.TEXT;
-		text.space = Space.SCREEN;
 		text.parentId = group.id;
+		text.depthTest = false;
 		text.content.text = "Lower third";
-		text.fontSize = 0.08f;
 		text.align = TextAlign.LEFT;
 		text.pivotX = 0;
 		text.pivotY = 0.5f;
 		text.textShadow = false;
-		text.transform.set(Channel.X, 0.03);
+		text.backgroundColor = 0;
+		text.transform.set(Channel.X, 0.03 * w);
+		InFront.scale(text, InFront.textScale(0.08f));
 		if (Files.exists(FONT)) {
 			text.fontAssetId = AssetStore.importFile(replayId, project, FONT);
 		}
@@ -157,7 +160,10 @@ final class LowerThirdChecks {
 
 		// The group slides in from the left and fades in over ticks 0..30.
 		ChannelValues start = group.transform.copy();
-		start.set(Channel.X, -1.0);
+		net.minecraft.world.phys.Vec3 offscreen = InFront.at(-1.0f, 0.85f);
+		start.set(Channel.X, offscreen.x);
+		start.set(Channel.Y, offscreen.y);
+		start.set(Channel.Z, offscreen.z);
 		check(TrackEditor.setKeyframe(editorState, group, start, 0), "group position keyframe at 0");
 		check(TrackEditor.setKeyframe(editorState, group, group.transform, 30), "group position keyframe at 30");
 		ChannelValues transparent = group.appearance.copy();
@@ -169,33 +175,38 @@ final class LowerThirdChecks {
 	/** Moving an element into a rotated, scaled group must leave it exactly where it was. */
 	private static void checkReparenting() {
 		BillboardProject project = ProjectManager.getCurrent();
+		OverlayRenderer.SceneCamera camera = OverlayRenderer.lastCamera();
 		Element group = new Element();
 		group.type = ElementType.GROUP;
-		group.space = Space.SCREEN;
 		group.hidden = true;
-		group.transform.set(Channel.X, 0.4);
-		group.transform.set(Channel.Y, 0.3);
+		group.transform.set(Channel.X, camera.position().x + 3);
+		group.transform.set(Channel.Y, camera.position().y + 1);
+		group.transform.set(Channel.Z, camera.position().z - 2);
+		group.transform.set(Channel.YAW, 40);
 		group.transform.set(Channel.ROLL, 30);
 		group.transform.set(Channel.SCALE_X, 2);
 		group.transform.set(Channel.SCALE_Y, 2);
 		Element child = new Element();
 		child.type = ElementType.SHAPE;
-		child.space = Space.SCREEN;
 		child.hidden = true;
-		child.transform.set(Channel.X, 0.7);
-		child.transform.set(Channel.Y, 0.6);
+		child.transform.set(Channel.X, camera.position().x + 1);
+		child.transform.set(Channel.Y, camera.position().y);
+		child.transform.set(Channel.Z, camera.position().z + 4);
+		// Turned like the group plus its own roll: groups scale only in their own plane, so a child keeps its exact
+		// shape when its rotation stays in that plane too (as for the pieces of a sign or a lower third).
+		child.transform.set(Channel.YAW, 40);
 		child.transform.set(Channel.ROLL, 10);
 		project.elements.add(group);
 		project.elements.add(child);
 		try {
 			SceneFrame before = SceneFrame.build(project, KeyframeEvaluator.Frame.EMPTY);
-			Matrix4f original = before.screenModel(before.node(child.id), 1600, 900);
+			Matrix4f original = before.worldModel(before.node(child.id), camera);
 			ChannelValues local = ViewportTools.reparentedTransform(before, before.node(child.id), before.node(group.id));
 			child.transform = local;
 			child.parentId = group.id;
 			SceneFrame after = SceneFrame.build(project, KeyframeEvaluator.Frame.EMPTY);
-			Matrix4f moved = after.screenModel(after.node(child.id), 1600, 900);
-			check(moved.equals(original, 0.5f), "reparenting should keep the element in place (to half a pixel):\n" + original + "\n" + moved);
+			Matrix4f moved = after.worldModel(after.node(child.id), camera);
+			check(moved.equals(original, 1e-3f), "reparenting should keep the element in place:\n" + original + "\n" + moved);
 			log("Reparenting into a rotated, scaled group keeps the element in place (local roll " + local.get(Channel.ROLL) + "°)");
 		} finally {
 			project.elements.remove(group);

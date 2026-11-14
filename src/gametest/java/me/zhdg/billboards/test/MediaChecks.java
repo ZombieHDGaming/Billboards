@@ -7,7 +7,6 @@ import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.ElementGeometry;
@@ -84,12 +83,10 @@ final class MediaChecks {
 			Element animated = new Element();
 			animated.name = "Animated GIF";
 			animated.type = ElementType.IMAGE;
-			animated.space = Space.SCREEN;
 			animated.assetId = AssetStore.importFile(replayId, project, gif);
-			animated.height = 0.15f;
-			animated.width = 0.15f;
-			animated.transform.set(Channel.X, 0.15);
-			animated.transform.set(Channel.Y, 0.35);
+			animated.height = 0.15f * InFront.frameHeight();
+			animated.width = 0.15f * InFront.frameHeight();
+			InFront.place(animated, 0.15f, 0.35f);
 			animated.mediaStartTick = 0;
 			animated.mediaLoop = true;
 			project.elements.add(animated);
@@ -98,12 +95,10 @@ final class MediaChecks {
 			Element animatedPng = new Element();
 			animatedPng.name = "Animated PNG";
 			animatedPng.type = ElementType.IMAGE;
-			animatedPng.space = Space.SCREEN;
 			animatedPng.assetId = AssetStore.importFile(replayId, project, apng);
-			animatedPng.height = 0.15f;
-			animatedPng.width = 0.15f;
-			animatedPng.transform.set(Channel.X, 0.15);
-			animatedPng.transform.set(Channel.Y, 0.6);
+			animatedPng.height = 0.15f * InFront.frameHeight();
+			animatedPng.width = 0.15f * InFront.frameHeight();
+			InFront.place(animatedPng, 0.15f, 0.6f);
 			project.elements.add(animatedPng);
 
 			// A video on a "screen" in the world, to the left of the world image.
@@ -114,8 +109,7 @@ final class MediaChecks {
 			Element clip = new Element();
 			clip.name = "Video screen";
 			clip.type = ElementType.VIDEO;
-			clip.space = Space.WORLD;
-			clip.facing = Facing.FACE_CAMERA;
+			clip.facing = Facing.CENTER;
 			clip.depthTest = false;
 			clip.assetId = AssetStore.importFile(replayId, project, video);
 			clip.width = 1.6f;

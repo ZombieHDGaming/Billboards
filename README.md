@@ -1,31 +1,30 @@
 # Billboards
 
 A [Fabric](https://fabricmc.net/) add-on for [Flashback](https://modrinth.com/mod/flashback) that lets you place
-images and text inside a replay — in the world or pinned to the screen — and animate them on Flashback's own
-timeline. Overlays render straight into Flashback's exports, so there is no video editing afterwards.
+images, text, shapes and videos inside a replay's world and animate them on Flashback's own timeline. Text works like
+vanilla text displays. Overlays render straight into Flashback's exports, so there is no video editing afterwards.
 
 **Requires:** Minecraft 26.3, Fabric Loader, Fabric API, Flashback 0.43.x.
 
 ## Using it
 
 1. Open a replay in Flashback and click **Billboards** in the menu bar.
-2. **Add image...** or **Add text**, either *In the world* (placed 3 blocks in front of the camera, facing it) or
-   *On screen* (centred in the frame).
+2. **Add image...**, **Add text**, **Add shape**, ... (placed 3 blocks in front of the camera, facing it).
 3. Select an overlay to edit it in the inspector:
-   - **Settings** (not animated): facing, hidden-behind-blocks, pivot, layer, size, font size, alignment, shadow,
-     background.
+   - **Settings** (not animated): billboard mode, see through blocks, lighting, pivot, layer, size, line width,
+     alignment, shadow, background.
    - **Transform**, **Appearance** and **Content** are animatable channels. Click **Animate** to add a keyframe at the
      timeline cursor; a track named `<overlay> · <channel>` appears on Flashback's timeline. From then on, editing a
      value adds or updates a keyframe at the cursor. Keyframes work like any other Flashback keyframe: drag them,
      change their interpolation, copy/paste them, undo/redo.
 4. **In the viewport**, click an overlay to select it and drag its gizmo. **W** / **E** / **R** (or the toolbar in the
    Billboards window) switch between move, rotate and scale. Options: *Local axes* (move and rotate along the overlay's
-   own axes), *Snap* (0.25 blocks / 1% of the frame, 15°, 0.1 scale) and *Auto-key* (edits on a channel that isn't
+   own axes), *Snap* (0.25 blocks, 15°, 0.1 scale) and *Auto-key* (edits on a channel that isn't
    animated yet start animating it instead of changing its base value). A drag on an animated channel writes one
    keyframe at the cursor when you let go, so it's one undo step.
-5. **Attach to an entity** (world overlays, under *Settings*): pick a nearby player or mob and the overlay follows it.
+5. **Attach to an entity** (under *Settings*): pick a nearby player or mob and the overlay follows it.
    Its position becomes an offset from an anchor (feet, centre, eyes or above the head), optionally turning with the
-   entity. Attach a camera-facing text overlay with the *Above head* anchor for a custom name tag.
+   entity. Attach a text overlay with the *Center* billboard and the *Above head* anchor for a custom name tag.
 6. **Shapes** (*Add shape*): rectangles, rounded rectangles, ellipses, lines and arrows, with a solid or gradient
    fill and an optional outline. Tinted and faded by the Appearance channel like everything else.
 7. **Fonts**: text uses Minecraft's font (including resource-pack fonts) or, via *Font: Choose...*, any TTF/OTF file,
@@ -33,7 +32,7 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
 8. **Groups** (*Add group*): a group's position, rotation, scale, opacity and tint apply to everything inside it, so a
    lower third or a sign made of several pieces animates as one. Select a group before adding something to put it
    inside, or use *Move into group* / *Move out of group* / *Ungroup* in the list's right-click menu (elements stay where
-   they are on screen). Clicking a group's contents in the viewport selects that piece; select the group itself in the
+   they are). Clicking a group's contents in the viewport selects that piece; select the group itself in the
    list.
 9. **Animated images and videos**: animated GIFs and PNGs added with *Add image...* play automatically; *Add video...*
    takes MP4, MOV, MKV, WebM and more. They play in sync with the replay (following its speed), starting at a chosen
@@ -42,8 +41,7 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
 10. **Look** (inspector): blend mode (normal, additive, multiply, screen), drop shadow, outline, glow, and blur for
     images and videos.
 11. **Presets** (*Presets* menu): right-click an overlay or group in the list and *Save as preset...* to reuse it,
-    with its animation, in any replay. Presets are inserted at the timeline cursor; world presets in front of the
-    camera.
+    with its animation, in any replay. Presets are inserted at the timeline cursor, in front of the camera.
 12. **Sharing** (*Share* menu): Flashback keeps its editor data (keyframes) outside the replay file, and so does
     Billboards. To give someone a replay with its overlays, *Export pack...* and send the pack with the replay; they
     open the replay and *Import pack...*.
@@ -51,9 +49,30 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
     at a file again.
 14. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
 
+### Text
+
+Text overlays work like vanilla [text displays](https://minecraft.wiki/w/Display#Text_displays): 40 font pixels per
+block, lines 10 pixels apart, a 25% black background one pixel around the text (change or remove it under
+*Background*), lines wrapping at the *line width* (200 pixels by default), left / centre / right alignment, an optional
+shadow, and lighting from the world. Make text bigger with the Transform channel's scale.
+
+The text itself can use formatting codes, with `&` or `§` (`&6&lGold and bold`, `&r` to reset), or be a JSON text
+component such as `{"text":"Hello","color":"gold","bold":true}`. Formatting colours replace the text colour; the
+Appearance opacity still fades it.
+
+| Setting | Like a text display's... |
+|---|---|
+| Billboard: Fixed / Vertical / Horizontal / Center | `billboard` (fixed, vertical, horizontal, center) |
+| See through blocks | `see_through` |
+| Lighting: World light / Full bright / Custom levels | normal lighting / `brightness` override |
+| Line width, Align, Shadow, Background | `line_width`, `alignment`, `shadow`, `background` |
+| Appearance opacity | `text_opacity` (but fading smoothly all the way to 0) |
+
+Lighting works for images, videos and shapes too; they default to *Full bright* so their colours show as they are.
+
 | Channel | Values |
 |---|---|
-| Transform | position (world: block coordinates, screen: 0–1 of the frame), rotation (pitch/yaw/roll in degrees, so spins past 360° work), scale |
+| Transform | position (block coordinates), rotation (pitch/yaw/roll in degrees, so spins past 360° work), scale |
 | Appearance | visible, opacity, tint / text colour |
 | Content | text, reveal (typewriter effect), crop |
 
@@ -69,7 +88,7 @@ original file doesn't break the replay.
 ## Status
 
 All five milestones of the [design](docs/DESIGN.md) are implemented: images, text, shapes, groups, animated
-GIFs/PNGs and videos in world and screen space with keyframed transform, appearance and content; custom fonts;
+GIFs/PNGs and videos in the world with keyframed transform, appearance and content; text like vanilla text displays; custom fonts;
 viewport selection, move/rotate/scale gizmos and entity attachment; blend modes and effects; presets, packs and
 relinking; translatable UI.
 
@@ -91,11 +110,11 @@ as `Lang.tr("...")`; after changing it, run `python3 scripts/update_lang.py` to 
 ```sh
 ./gradlew runClientGameTest   # records a replay with Flashback, opens it, adds overlays with keyframes and checks
                               # interpolation, screenshots at several ticks, saving/loading of keyframes, viewport
-                              # picking, gizmo maths, entity attachment, a lower third (group + shape + TTF text)
+                              # picking, gizmo maths, entity attachment, text-display layout, wrapping, formatting
+                              # codes, JSON text, billboard modes and lighting, a lower third (group + shape + TTF text)
                               # sliding in, a GIF, APNG and video playing in sync, blend modes and effects against exact
                               # colours, presets and packs, and the language file; with xdotool installed it also
-                              # clicks and
-                              # drags gizmos with the real mouse and saves full-window screenshots
+                              # clicks and drags gizmos with the real mouse and saves full-window screenshots
 ./gradlew runExportCheck      # then: opens that replay and runs two real Flashback exports (a PNG sequence like a
                               # video export, and a "No GUI" screenshot) and checks the overlays in the output
 ```

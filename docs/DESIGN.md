@@ -1,7 +1,7 @@
 # Billboards — Design Document
 
 **Billboards** is a Fabric add-on for [Flashback](https://modrinth.com/mod/flashback). It lets you place images,
-text, shapes, GIFs and videos in a replay, in the world or on screen, and animate them on Flashback's own timeline.
+text, shapes, GIFs and videos in a replay's world and animate them on Flashback's own timeline.
 Overlays render straight into Flashback's export, so they need no video editing afterwards.
 
 | | |
@@ -10,7 +10,7 @@ Overlays render straight into Flashback's export, so they need no video editing 
 | Package | `me.zhdg.billboards` |
 | Target | Minecraft 26.3, Fabric, Flashback 0.43.x (built against 0.43.6) |
 | Java | 25 |
-| Status | Approved. All milestones (1-5) implemented. |
+| Status | Approved. All milestones (1-5) implemented, then revised: world only, text works like vanilla text displays (§10). |
 
 ---
 
@@ -18,17 +18,17 @@ Overlays render straight into Flashback's export, so they need no video editing 
 
 | Topic | Decision |
 |---|---|
-| Space | **World-space** (placed at XYZ, part of the scene) **and screen-space** (pinned to the frame, like a title layer) |
+| Space | **World-space only** (placed at XYZ, part of the scene). Screen-space overlays were built in M1-M5 and removed in the revision (§10) |
 | Animation | **Flashback's own keyframe timeline**: overlay tracks sit next to camera/FOV tracks |
 | Element types | Images (PNG/JPG), Text, Animated media (GIF/APNG + video), Shapes / color fills |
 | Keyframeable | Position, rotation, opacity, **scale/size, color/tint, visibility, text content, crop** |
-| World facing | Per element: **Fixed**, **Face camera**, **Y-axis only** |
+| Billboard | Per element, the vanilla display-entity modes: **Fixed**, **Vertical**, **Horizontal**, **Center** |
 | Occlusion | Per element: **depth-tested** (default) or **always on top** |
 | Easing | **Reuse Flashback's interpolation types** (Smooth, Linear, Ease In/Out/In-Out, Hold, Hermite) |
 | Editing | **ImGuizmo viewport gizmos + an ImGui properties panel** |
 | Assets | **File picker; files are copied in** so the project is self-contained |
 | Video | **Decode with the FFmpeg/JavaCV that Flashback already ships** |
-| Text | **Minecraft fonts (incl. resource-pack fonts) + custom TTF/OTF** |
+| Text | **Like a vanilla text display** (size, spacing, background, wrapping, formatting codes, JSON text, lighting); Minecraft fonts (incl. resource-pack fonts) + custom TTF/OTF |
 | Attachment | World elements can **attach to an entity** with a keyframeable offset |
 | Extras | **Blend modes, groups/layers, presets/templates, simple effects** (shadow, outline, glow, blur) |
 | Versions | **26.3 only** |
@@ -67,7 +67,7 @@ These come from reading Flashback 0.43.6 (`Moulberry/Flashback`), and they drive
    Billboards follows the same pattern (see §4).
 8. **Rendering:** Flashback hooks world rendering via a `LevelRenderer` mixin (`WorldRenderHook`), uses 26.3's
    new render API (`com.mojang.renderpearl`, `RenderPipelines`, `RenderType`), and hides the GUI during export
-   when "No GUI" is set (`MixinGameRenderer.render_noGui`). Screen-space overlays must therefore **not** draw in the
+   when "No GUI" is set (`MixinGameRenderer.render_noGui`). Overlays must therefore **not** draw in the
    vanilla GUI pass, or "No GUI" exports would drop them.
 9. **Bundled libraries we can use:** `imgui.moulberry90.*` (ImGui 1.90 **with ImGuizmo**,
    `imgui.moulberry90.extension.imguizmo`), and `org.bytedeco.javacv` / FFmpeg 8.1 (unrelocated). Flashback's
@@ -102,12 +102,12 @@ Common fields on every `Element`:
 | Field | Notes |
 |---|---|
 | `id: UUID`, `name`, `locked`, `hiddenInEditor` | |
-| `space: WORLD \| SCREEN` | Fixed at creation (changing it converts coordinates) |
-| `facing: FIXED \| FACE_CAMERA \| Y_AXIS` | World only |
-| `depthTest: boolean` | World only, default `true` |
-| `attach: null \| EntityAttach{entityUuid, anchor: FEET\|EYES\|HEAD_TOP, inheritYaw}` | World only |
+| `facing: FIXED \| VERTICAL \| HORIZONTAL \| CENTER` | Billboard mode, as on display entities |
+| `depthTest: boolean` | Default `true`; off = "see through blocks" |
+| `lighting: WORLD \| FULL_BRIGHT \| CUSTOM` (+ block/sky levels) | Text defaults to world light, everything else to full bright |
+| `attach: null \| EntityAttach{entityUuid, anchor: FEET\|EYES\|HEAD_TOP, inheritYaw}` | |
 | `anchor/pivot: Vec2` | 0–1 within the element, default centre |
-| `layer: int` | Draw order within its parent (screen-space and always-on-top) |
+| `layer: int` | Draw order of see-through elements |
 | `blend: NORMAL \| ADDITIVE \| MULTIPLY \| SCREEN` | |
 | `effects: List<Effect>` | DropShadow, Outline, Glow, Blur (milestone 5) |
 | `base: PropertySet` | Values used when no keyframe applies |
@@ -117,12 +117,10 @@ independently:
 
 | Channel | Properties | Interpolation |
 |---|---|---|
-| **Transform** | position (`Vec3` world / `Vec2` normalized screen), rotation (pitch/yaw/roll degrees), scale (`Vec2`) | Flashback types, per component. Euler angles (not quaternions) so 720° spins and multi-turn animations work. Size is a static setting; animate scale instead |
+| **Transform** | position (`Vec3`, blocks), rotation (pitch/yaw/roll degrees), scale (`Vec2`) | Flashback types, per component. Euler angles (not quaternions) so 720° spins and multi-turn animations work. Size is a static setting; animate scale instead |
 | **Appearance** | opacity, tint/color (RGBA), visible (bool) | opacity & color interpolate (color in linear RGB); `visible` is always step |
 | **Content** | text string, crop rect, media time offset | text: step (with an optional "typewriter reveal" count that interpolates); crop interpolates |
 
-**Screen-space coordinates are normalized** (0–1 of the frame plus an aspect-correct size unit). An overlay
-therefore lands in the same place at any export resolution, aspect ratio or SSAA setting.
 
 ---
 
@@ -190,17 +188,9 @@ Billboards registers **three keyframe types**, one per channel:
 - **Entity attach** reads the entity's interpolated position for the current partial tick (as Flashback's
   `AccurateEntityPositionHandler` does), so attached elements don't jitter in exports.
 
-### Screen-space
-
-- Rendered in **our own pass at the end of `GameRenderer.renderLevel`** (after the world, hand and screen
-  effects, before the HUD), so they appear in "No GUI" exports, in transparent-background exports, and in the editor
-  viewport, but never over Flashback's ImGui panels.
-- They use their own pixel-space orthographic projection, built from normalized coordinates (§3) and the main
-  render target's size, so camera bobbing, hurt-cam, shake and roll never move titles.
-
 ### Shader
 
-Both passes draw `POSITION_TEX_COLOR` quads with a small Billboards shader (`texture × vertex colour`, with a
+The pass draws `POSITION_TEX_COLOR` quads (plus the light level for lit elements) with a small Billboards shader (`texture × vertex colour`, with a
 grayscale variant for TTF glyph atlases). Vanilla's text shader discards pixels below 10% alpha, which would make text
 fades pop. Depth-tested overlays test against the world but don't write depth, so overlapping overlays never z-fight.
 
@@ -211,7 +201,7 @@ fades pop. Depth-tested overlays test against the world but don't write depth, s
 | Image | Upload to a `DynamicTexture`; mipmaps + linear filtering by default ("pixelated" option for pixel art) |
 | GIF / APNG | Played through the same FFmpeg player as videos (FFmpeg composites GIF/APNG frames correctly). `.png` files with an `acTL` chunk are opened with the `apng` demuxer; when the demuxer doesn't know the length (APNG), it is worked out from the frame timestamps once, so looping works |
 | Video | `FFmpegFrameGrabber` from Flashback's JavaCV, one player per element, RGBA frames copied straight into a `NativeImage`. Always shows the latest frame at or before the requested time, decoding forwards and seeking (to the keyframe before, never discarding past the target) when going backwards or more than 2 s ahead. Decoding is synchronous in the editor too, which keeps editor and export identical; an async decoder for smoother scrubbing of long, high-resolution videos is a possible later improvement. Audio is not mixed |
-| Text (Minecraft) | Vanilla `Font` rendering (resource-pack fonts work), into world or screen pose |
+| Text (Minecraft) | Laid out and drawn like vanilla's `TextDisplayRenderer` (§10), with vanilla `Font` glyphs (resource-pack fonts work) |
 | Text (TTF/OTF) | Rasterize glyphs with **Java's font engine** (AWT, works headless) at 64 px into a 1024² atlas, on demand, drawn with linear filtering. Independent of Minecraft's font internals |
 | Shapes | CPU-tessellated meshes (rounded rects, ellipses, arrows), solid or 2-stop gradient fill + stroke |
 
@@ -240,17 +230,18 @@ All in ImGui, inside Flashback's editor:
 - **Billboards window** (added to Flashback's window menu):
   - **Outliner:** a tree of groups and elements with drag-to-reorder/reparent, plus eye/lock toggles, duplicate,
     delete and "Save as preset".
-  - **Add menu:** Image…, Media…, Text, Shape ▸, Group, From preset ▸. New world elements spawn ~3 blocks in front
-    of the camera, facing it. New screen elements spawn in the frame centre.
+  - **Add menu:** Image…, Media…, Text, Shape ▸, Group, From preset ▸. New elements spawn ~3 blocks in front
+    of the camera, facing it.
   - **Inspector:** fields for the selected element with ◆ keyframe buttons. A ◆ is filled when the cursor sits on a
     keyframe and hollow when it doesn't.
-- **Viewport gizmos (ImGuizmo):** click to select (ray-pick world quads, rect-hit screen elements), then translate /
+- **Viewport gizmos (ImGuizmo):** click to select (ray-pick quads), then translate /
   rotate / scale with `W`/`E`/`R`, a local/world axes toggle and a snap toggle. The gizmo runs inside Flashback's
   game-frame window (so ImGuizmo sees it as hovered), and a mixin on `ReplayUI.handleBasicInputs` stops Flashback
   grabbing the mouse for camera look when the click belongs to Billboards. Drags preview live and are written once
   on release: to the base value, or to a keyframe at the cursor when the channel is animated or **auto-key** is on.
-  ImGuizmo gets a standard OpenGL projection rebuilt from Minecraft's (which uses reversed Z). Camera-facing world
-  elements only allow roll in the rotate gizmo.
+  ImGuizmo gets a standard OpenGL projection rebuilt from Minecraft's (which uses reversed Z). Billboarded elements only
+  get the rotate rings for the axes the camera leaves to them (center: roll; vertical: pitch + roll; horizontal:
+  yaw + roll).
 - **File picker:** Flashback's existing native dialog helper (or TinyFD from LWJGL) with image/video/font filters.
   Picked files are hashed and copied into `assets/`.
 
@@ -267,7 +258,7 @@ src/client/java/me/zhdg/billboards/
   project/    BillboardProject, ProjectManager (load/save/backup), AssetStore, PresetIO
   keyframe/   *KeyframeType, *Keyframe, *Change, KeyframeCodec
   runtime/    BillboardsRuntime (per-frame evaluated state), EntityAttachResolver
-  render/     WorldOverlayRenderer, ScreenOverlayRenderer, pipelines/, text/, media/, shapes/, effects/
+  render/     OverlayRenderer, SceneFrame, ElementGeometry, pipelines/, text/, media/, shapes/, effects/
   editor/     BillboardsWindow, Outliner, Inspector, GizmoController, FilePicker
   mixin/      KeyframeTypeAdapterMixin, MinecraftKeyframeHandlerMixin, LevelRendererMixin,
               GameRendererMixin, EditorStateManagerMixin, WindowMenuMixin
@@ -302,3 +293,27 @@ Maven and `modCompileOnly "maven.modrinth:flashback:<version>"`, and run the dev
   "unaffected by shaders" option is likely).
 - **To verify during M1:** the exact Modrinth Maven coordinates for Flashback 0.43.6 (the version number vs. the
   version id), which could not be fetched from this environment.
+
+---
+
+## 10. Revision: world only, vanilla-style text
+
+After review, screen-space overlays were removed (everything is placed in the world), and text was reworked to match
+vanilla **text display** entities (`DisplayRenderer.TextDisplayRenderer` in 26.3):
+
+| Vanilla behaviour | Billboards |
+|---|---|
+| 1 font pixel = 1/40 block (`scale(-0.025)`) | `ElementGeometry.TEXT_PIXEL`; bigger text via the Transform scale, as with a display's `transformation` |
+| Lines 10 px apart (9 + 1), block height `lines × 10 − 1` | Same |
+| `line_width` wrapping (default 200) via `Font.split` | `lineWidth` setting, wrapped with Minecraft's `StringSplitter` (custom TTF fonts get a splitter using their own advances) |
+| Background from (−1, −1) to (width, height), default 25% black (`0x40000000`) | Same rectangle and default; "Default" button in the inspector |
+| Anchored at its bottom centre (`translate(1 − width/2, −height)`) | New text gets pivot (0.5, 1) |
+| `alignment` left/center/right per line | Same maths (`width/2 − lineWidth/2` etc.) |
+| `shadow` (default off), `see_through`, `text_opacity` | Shadow setting (default off), "See through blocks" (= no depth test), the Appearance opacity (fades smoothly: no 10% alpha cut-off) |
+| Text is a chat component | Content text is parsed as a JSON text component when it is one, otherwise `&`/`§` formatting codes; formatting colours replace the text colour, opacity still applies |
+| `billboard` FIXED / VERTICAL / HORIZONTAL / CENTER from the camera's yaw/pitch (`cameraYRot − 180`, `−cameraXRot`) | `Facing` with the same maths (`ElementGeometry.orientation`); the element's own rotation fills the axes the mode doesn't control; roll always applies |
+| Lit by block/sky light at its position, or a `brightness` override | `lighting`: world light (sampled at the pivot's block), full bright, or custom levels. Lit pipelines use `POSITION_TEX_LIGHTMAP_COLOR`, bind the lightmap as `Sampler2` and multiply by `sample_lightmap` like vanilla's text shader |
+
+Typewriter reveals keep the full layout (lines and alignment) and cut the shown characters, so revealed text doesn't
+shift. Old projects load: `FACE_CAMERA` / `Y_AXIS` read as `CENTER` / `VERTICAL`; screen-space elements from older
+projects load hidden (their positions were frame fractions), and the old `fontSize` is ignored.

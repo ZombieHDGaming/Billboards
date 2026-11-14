@@ -7,7 +7,6 @@ import imgui.moulberry90.type.ImString;
 import me.zhdg.billboards.Lang;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
-import me.zhdg.billboards.model.Space;
 
 import java.util.function.Consumer;
 
@@ -28,45 +27,31 @@ public final class ChannelEditor {
 	}
 
 	/** Draws the fields; calls {@code set}/{@code setText} for each edited value. Returns true if anything changed. */
-	public static boolean render(ChannelValues values, Space space, ComponentSetter set, Consumer<String> setText) {
+	public static boolean render(ChannelValues values, ComponentSetter set, Consumer<String> setText) {
 		return switch (values.channel) {
-			case TRANSFORM -> transform(values, space, set);
+			case TRANSFORM -> transform(values, set);
 			case APPEARANCE -> appearance(values, set);
 			case CONTENT -> content(values, set, setText);
 		};
 	}
 
-	private static boolean transform(ChannelValues values, Space space, ComponentSetter set) {
+	private static boolean transform(ChannelValues values, ComponentSetter set) {
 		boolean changed = false;
 		ImGui.pushItemWidth(220);
-		if (space == Space.WORLD) {
-			String[] labels = {"X##pos_x", "Y##pos_y", "Z##pos_z"};
-			for (int i = 0; i < 3; i++) {
-				DOUBLE.set(values.get(Channel.X + i));
-				if (ImGui.inputDouble(labels[i], DOUBLE, 0.1, 1.0, "%.3f")) {
-					set.set(Channel.X + i, DOUBLE.get());
-					changed = true;
-				}
-			}
-			float[] rotation = {values.getFloat(Channel.PITCH), values.getFloat(Channel.YAW), values.getFloat(Channel.ROLL)};
-			if (ImGui.dragFloat3(Lang.tr("Rotation (pitch, yaw, roll)##rotation"), rotation, 0.5f, -100000f, 100000f, "%.1f°")) {
-				set.set(Channel.PITCH, rotation[0]);
-				set.set(Channel.YAW, rotation[1]);
-				set.set(Channel.ROLL, rotation[2]);
+		String[] labels = {"X##pos_x", "Y##pos_y", "Z##pos_z"};
+		for (int i = 0; i < 3; i++) {
+			DOUBLE.set(values.get(Channel.X + i));
+			if (ImGui.inputDouble(labels[i], DOUBLE, 0.1, 1.0, "%.3f")) {
+				set.set(Channel.X + i, DOUBLE.get());
 				changed = true;
 			}
-		} else {
-			float[] position = {values.getFloat(Channel.X), values.getFloat(Channel.Y)};
-			if (ImGui.dragFloat2(Lang.tr("Position (0-1 of frame)##screen_pos"), position, 0.002f, -2f, 3f, "%.3f")) {
-				set.set(Channel.X, position[0]);
-				set.set(Channel.Y, position[1]);
-				changed = true;
-			}
-			float[] roll = {values.getFloat(Channel.ROLL)};
-			if (ImGui.dragFloat(Lang.tr("Rotation##screen_roll"), roll, 0.5f, -100000f, 100000f, "%.1f°")) {
-				set.set(Channel.ROLL, roll[0]);
-				changed = true;
-			}
+		}
+		float[] rotation = {values.getFloat(Channel.PITCH), values.getFloat(Channel.YAW), values.getFloat(Channel.ROLL)};
+		if (ImGui.dragFloat3(Lang.tr("Rotation (pitch, yaw, roll)##rotation"), rotation, 0.5f, -100000f, 100000f, "%.1f°")) {
+			set.set(Channel.PITCH, rotation[0]);
+			set.set(Channel.YAW, rotation[1]);
+			set.set(Channel.ROLL, rotation[2]);
+			changed = true;
 		}
 		float[] scale = {values.getFloat(Channel.SCALE_X), values.getFloat(Channel.SCALE_Y)};
 		if (ImGui.dragFloat2(Lang.tr("Scale (x, y)##scale"), scale, 0.01f, -100f, 100f, "%.3f")) {
@@ -115,6 +100,7 @@ public final class ChannelEditor {
 			setText.accept(ImGuiHelper.getString(textBuffer));
 			changed = true;
 		}
+		ImGuiHelper.tooltip(Lang.tr("Text: formatting codes work (&6 gold, &l bold, &o italic, &n underline, &r reset; § too), and so do JSON text components such as {\"text\":\"Hi\",\"color\":\"gold\"}. Long lines wrap at the line width."));
 
 		float[] reveal = {values.getFloat(Channel.REVEAL)};
 		if (ImGui.sliderFloat(Lang.tr("Reveal##reveal"), reveal, 0f, 1f, "%.2f")) {

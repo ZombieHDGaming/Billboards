@@ -17,7 +17,6 @@ import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.ProjectManager;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -73,7 +72,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		} catch (IOException e) {
 			throw new java.io.UncheckedIOException(e);
 		}
-		Path screenImage = writeSolidImage(images.resolve("screen.png"), 64, 32, SCREEN_IMAGE_RGB);
+		Path screenImage = writeSolidImage(images.resolve("fade.png"), 64, 32, SCREEN_IMAGE_RGB);
 		Path worldImage = writeSolidImage(images.resolve("world.png"), 64, 64, WORLD_IMAGE_RGB);
 
 		context.runOnClient(minecraft -> {
@@ -85,14 +84,14 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		});
 		context.waitTicks(5);
 
-		// The screen image fades from 0 opacity at tick 0 to 1 at tick 40.
+		// The fade image goes from 0 opacity at tick 0 to 1 at tick 40.
 		long atStart = countPixels(screenshotAt(context, 0, "billboards-tick-0"), SCREEN_IMAGE_RGB);
 		long atMiddle = countPixels(screenshotAt(context, 20, "billboards-tick-20"), SCREEN_IMAGE_RGB);
 		long atEnd = countPixels(screenshotAt(context, 40, "billboards-tick-40"), SCREEN_IMAGE_RGB);
-		log("Fully-green screen image pixels at ticks 0/20/40: " + atStart + " / " + atMiddle + " / " + atEnd);
-		check(atStart == 0, "screen image should be invisible at tick 0");
-		check(atMiddle == 0, "screen image should be half-transparent (blended, not pure green) at tick 20");
-		check(atEnd > 500, "screen image should be fully visible at tick 40");
+		log("Fully-green fade image pixels at ticks 0/20/40: " + atStart + " / " + atMiddle + " / " + atEnd);
+		check(atStart == 0, "the fade image should be invisible at tick 0");
+		check(atMiddle == 0, "the fade image should be half-transparent (blended, not pure green) at tick 20");
+		check(atEnd > 500, "the fade image should be fully visible at tick 40");
 
 		BufferedImage tick60 = screenshotAt(context, 60, "billboards-tick-60");
 		long titlePixels = countPixels(tick60, 0xFFFFFF);
@@ -112,6 +111,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		checkHiddenHud(context);
 		ViewportChecks.run(context, screenId, worldId);
+		TextDisplayChecks.run(context);
 		LowerThirdChecks.run(context);
 		MediaChecks.run(context);
 		EffectsChecks.run(context);
@@ -198,17 +198,15 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		Flashback.getConfig().internal.openedWindows.add(BillboardsWindow.WINDOW_ID);
 
-		// Screen image in the bottom-right corner, fading in over ticks 0..40.
+		// An image in the bottom-right corner of the frame, fading in over ticks 0..40.
 		Element screen = new Element();
 		screenId = screen.id;
-		screen.name = "Screen image";
+		screen.name = "Fade image";
 		screen.type = ElementType.IMAGE;
-		screen.space = Space.SCREEN;
 		screen.assetId = AssetStore.importFile(replayId, project, screenImage);
-		screen.height = 0.2f;
-		screen.width = 0.4f;
-		screen.transform.set(Channel.X, 0.75);
-		screen.transform.set(Channel.Y, 0.75);
+		screen.height = 0.2f * InFront.frameHeight();
+		screen.width = 0.4f * InFront.frameHeight();
+		InFront.place(screen, 0.75f, 0.75f);
 		project.elements.add(screen);
 
 		ChannelValues hidden = screen.appearance.copy();
@@ -218,16 +216,15 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		check(TrackEditor.setKeyframe(editorState, screen, hidden, 0), "set keyframe at tick 0");
 		check(TrackEditor.setKeyframe(editorState, screen, shown, 40), "set keyframe at tick 40");
 
-		// Screen title text.
+		// Title text at the top of the frame.
 		Element title = new Element();
 		title.name = "Title";
 		title.type = ElementType.TEXT;
-		title.space = Space.SCREEN;
 		title.content.text = "Billboards test\nsecond line";
-		title.fontSize = 0.08f;
+		title.textShadow = true;
 		title.backgroundColor = 0x80000000;
-		title.transform.set(Channel.X, 0.5);
-		title.transform.set(Channel.Y, 0.15);
+		InFront.place(title, 0.5f, 0.15f);
+		InFront.scale(title, InFront.textScale(0.08f));
 		project.elements.add(title);
 
 		// World image 4 blocks in front of the camera, always on top so terrain can't hide it.
@@ -238,8 +235,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		worldId = world.id;
 		world.name = "World image";
 		world.type = ElementType.IMAGE;
-		world.space = Space.WORLD;
-		world.facing = Facing.FACE_CAMERA;
+		world.facing = Facing.CENTER;
 		world.depthTest = false;
 		world.assetId = AssetStore.importFile(replayId, project, worldImage);
 		world.width = 1.5f;
@@ -253,8 +249,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		Element sign = new Element();
 		sign.name = "World text";
 		sign.type = ElementType.TEXT;
-		sign.space = Space.WORLD;
-		sign.facing = Facing.Y_AXIS;
+		sign.facing = Facing.VERTICAL;
 		sign.content.text = "Hello world";
 		sign.transform.set(Channel.X, eye.x + forward.x() * 6);
 		sign.transform.set(Channel.Y, eye.y + forward.y() * 6 + 1.5);
@@ -269,7 +264,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		// The evaluator should interpolate halfway between the two opacity keyframes.
 		ChannelValues halfway = KeyframeEvaluator.evaluate(new PlaybackTime(editorState, 20)).get(screen.id, Channel.APPEARANCE);
-		check(halfway != null, "screen image should have an appearance track");
+		check(halfway != null, "the fade image should have an appearance track");
 		log("Opacity at tick 20: " + halfway.get(Channel.OPACITY));
 		check(halfway.get(Channel.OPACITY) > 0.05 && halfway.get(Channel.OPACITY) < 0.95, "opacity should be between keyframes at tick 20");
 		ChannelValues after = KeyframeEvaluator.evaluate(new PlaybackTime(editorState, 500)).get(screen.id, Channel.APPEARANCE);
@@ -298,8 +293,8 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 	}
 
 	/**
-	 * Screen overlays must not be part of the GUI pass, or Flashback exports with "No GUI" would drop them. Hide the
-	 * HUD and check they are still drawn.
+	 * Overlays must not be part of the GUI pass, or Flashback exports with "No GUI" would drop them. Hide the HUD and
+	 * check they are still drawn.
 	 * <p>
 	 * (A real Flashback export can't run inside Fabric's client gametest: the gametest steps the server in lock-step
 	 * with client ticks, while an export blocks the client until the server reaches the export tick, so both wait
@@ -312,8 +307,8 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 			}
 		});
 		long pixels = countPixels(screenshotAt(context, 41, "billboards-hud-hidden"), SCREEN_IMAGE_RGB);
-		log("Screen image pixels with the HUD hidden: " + pixels);
-		check(pixels > 500, "screen overlays should still render with the HUD hidden");
+		log("Fade image pixels with the HUD hidden: " + pixels);
+		check(pixels > 500, "overlays should still render with the HUD hidden");
 		context.runOnClient(minecraft -> minecraft.gui.hud.toggle());
 	}
 

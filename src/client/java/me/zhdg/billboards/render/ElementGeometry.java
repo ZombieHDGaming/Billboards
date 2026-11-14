@@ -1,28 +1,47 @@
 package me.zhdg.billboards.render;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.mojang.serialization.DynamicOps;
+import com.mojang.serialization.JsonOps;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
+import me.zhdg.billboards.model.Facing;
+import me.zhdg.billboards.project.ProjectManager;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
+import net.minecraft.client.StringSplitter;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.locale.Language;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentSerialization;
+import net.minecraft.network.chat.Style;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
-import org.joml.Quaternionfc;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Where an element is and how big it is. Rendering, viewport picking, gizmos and selection outlines all go through
  * here so they always agree.
  * <p>
  * Every element is laid out in a local frame where +X is right and +Y is up as seen from the front, with the
- * element's pivot at the origin and sizes multiplied by a "unit" (1 in the world, where sizes are blocks; the frame
- * height on screen).
+ * element's pivot at the origin. Sizes are in blocks.
  */
 public final class ElementGeometry {
+
+	/** Size of one font pixel in blocks, as on vanilla text displays. */
+	public static final float TEXT_PIXEL = 0.025f;
+	/** Distance between lines in font pixels (9 for the glyphs plus 1), as on vanilla text displays. */
+	public static final int LINE_HEIGHT = 10;
 
 	/** An axis-aligned rectangle in an element's local frame. */
 	public record Bounds(float minX, float minY, float maxX, float maxY) {
@@ -32,12 +51,37 @@ public final class ElementGeometry {
 	}
 
 	/**
-	 * Text laid out in font units (Minecraft font pixels, or raster pixels of a custom font): the shown lines, each
-	 * line's width, the block size, and the size of one font unit in local units.
+	 * Text laid out like a vanilla text display, in font pixels with y growing downwards: line {@code i} starts at
+	 * y = {@code i * LINE_HEIGHT}, and the background covers (-1, -1) to ({@code width}, {@code height}).
+	 *
+	 * @param lines     the wrapped lines (already cut short by the reveal channel)
+	 * @param lineWidths each line's full width (before the reveal), so revealed text doesn't shift
+	 * @param width     the widest line
+	 * @param font      the custom font, or null for Minecraft's font
+	 * @param fontScale custom fonts: font pixels per raster pixel of the font (its line height maps to 9 pixels)
 	 */
-	public record TextLayout(String[] lines, float[] lineWidths, float blockWidth, float lineHeight, float pixel, @Nullable CustomFont font) {
-		public float blockHeight() {
-			return this.lines.length * this.lineHeight;
+	public record TextLayout(List<FormattedCharSequence> lines, float[] lineWidths, float width, @Nullable CustomFont font, float fontScale) {
+		public float height() {
+			return this.lines.size() * LINE_HEIGHT - 1;
+		}
+
+		/** Left edge of a line, in font pixels. */
+		public float lineX(int line, me.zhdg.billboards.model.TextAlign align) {
+			float lineWidth = this.lineWidths[line];
+			return switch (align) {
+				case LEFT -> 0;
+				case CENTER -> this.width / 2f - lineWidth / 2f;
+				case RIGHT -> this.width - lineWidth;
+			};
+		}
+
+		/** Where the element's pivot is, in font pixels. */
+		public float pivotX(Element element) {
+			return -1 + element.pivotX * (this.width + 1);
+		}
+
+		public float pivotY(Element element) {
+			return -1 + element.pivotY * (this.height() + 1);
 		}
 	}
 
@@ -49,7 +93,7 @@ public final class ElementGeometry {
 	// ------------------------------------------------------------------------------------------------
 
 	/** The element's visible rectangle in its local frame, or null if it currently draws nothing. */
-	public static @Nullable Bounds localBounds(Element element, ChannelValues content, float unit) {
+	public static @Nullable Bounds localBounds(Element element, ChannelValues content) {
 		if (element.type == ElementType.GROUP) {
 			return null;
 		}
@@ -62,78 +106,139 @@ public final class ElementGeometry {
 			if (u1 <= u0 || v1 <= v0) {
 				return null;
 			}
-			float width = element.width * unit;
-			float height = element.height * unit;
+			float width = element.width;
+			float height = element.height;
 			// Cropping trims the quad but keeps the remaining pixels where they were.
 			return new Bounds((u0 - element.pivotX) * width, (element.pivotY - v1) * height,
 				(u1 - element.pivotX) * width, (element.pivotY - v0) * height);
 		}
 
-		TextLayout layout = textLayout(element, content, unit);
+		TextLayout layout = textLayout(element, content);
 		if (layout == null) {
 			return null;
 		}
-		float width = layout.blockWidth() * layout.pixel();
-		float height = layout.blockHeight() * layout.pixel();
+		float width = (layout.width() + 1) * TEXT_PIXEL;
+		float height = (layout.height() + 1) * TEXT_PIXEL;
 		return new Bounds(-element.pivotX * width, (element.pivotY - 1) * height, (1 - element.pivotX) * width, element.pivotY * height);
 	}
 
-	public static @Nullable TextLayout textLayout(Element element, ChannelValues content, float unit) {
-		String text = revealed(content);
-		if (text.isEmpty()) {
-			return null;
-		}
-		String[] lines = text.split("\n", -1);
-		float[] widths = new float[lines.length];
-		float blockWidth = 0;
+	// ------------------------------------------------------------------------------------------------
+	// Text
+	// ------------------------------------------------------------------------------------------------
 
-		CustomFont custom = CustomFont.get(me.zhdg.billboards.project.ProjectManager.currentReplayId(), element.fontAssetId);
-		float lineHeight;
-		if (custom != null) {
-			lineHeight = custom.lineHeight();
-			for (int i = 0; i < lines.length; i++) {
-				widths[i] = custom.width(lines[i]);
-				blockWidth = Math.max(blockWidth, widths[i]);
-			}
-		} else {
-			Font font = Minecraft.getInstance().font;
-			lineHeight = font.lineHeight;
-			for (int i = 0; i < lines.length; i++) {
-				widths[i] = font.width(lines[i]);
-				blockWidth = Math.max(blockWidth, widths[i]);
-			}
-		}
-		if (blockWidth <= 0) {
-			return null;
-		}
-		// fontSize is the height of one line.
-		float pixel = element.fontSize * unit / lineHeight;
-		return new TextLayout(lines, widths, blockWidth, lineHeight, pixel, custom);
-	}
-
-	/** The part of the text shown by the reveal fraction, counting code points (newlines don't count). */
-	public static String revealed(ChannelValues content) {
+	public static @Nullable TextLayout textLayout(Element element, ChannelValues content) {
 		String text = content.text == null ? "" : content.text;
 		double reveal = content.get(Channel.REVEAL);
-		if (reveal >= 1) {
-			return text;
+		if (text.isEmpty() || reveal <= 0) {
+			return null;
 		}
-		if (reveal <= 0) {
-			return "";
+
+		CustomFont custom = CustomFont.get(ProjectManager.currentReplayId(), element.fontAssetId);
+		float fontScale = 1;
+		StringSplitter splitter;
+		if (custom != null) {
+			float scale = 9f / custom.lineHeight();
+			fontScale = scale;
+			splitter = new StringSplitter((codePoint, style) -> custom.glyph(codePoint).advance() * scale);
+		} else {
+			splitter = Minecraft.getInstance().font.getSplitter();
 		}
-		int visible = (int) text.codePoints().filter(c -> c != '\n').count();
-		int shown = (int) Math.floor(visible * reveal);
-		StringBuilder builder = new StringBuilder();
-		int count = 0;
-		for (int i = 0; i < text.length() && count < shown; ) {
-			int codePoint = text.codePointAt(i);
-			builder.appendCodePoint(codePoint);
-			if (codePoint != '\n') {
-				count++;
+
+		// What Font.split does, with the splitter of whichever font is used.
+		List<FormattedCharSequence> lines = Language.getInstance().getVisualOrder(
+			splitter.splitLines(parse(text), Math.max(1, element.lineWidth), Style.EMPTY));
+		if (lines.isEmpty()) {
+			return null;
+		}
+		float[] widths = new float[lines.size()];
+		float width = 0;
+		int total = 0;
+		for (int i = 0; i < widths.length; i++) {
+			widths[i] = splitter.stringWidth(lines.get(i));
+			width = Math.max(width, widths[i]);
+			total += length(lines.get(i));
+		}
+		if (total == 0) {
+			return null;
+		}
+
+		if (reveal < 1) {
+			int remaining = (int) Math.floor(total * reveal);
+			if (remaining <= 0) {
+				return null;
 			}
-			i += Character.charCount(codePoint);
+			List<FormattedCharSequence> shown = new java.util.ArrayList<>(lines.size());
+			for (FormattedCharSequence line : lines) {
+				shown.add(truncate(line, remaining));
+				remaining = Math.max(0, remaining - length(line));
+			}
+			lines = shown;
 		}
-		return builder.toString();
+		return new TextLayout(lines, widths, width, custom, fontScale);
+	}
+
+	private static final Pattern LEGACY_CODE = Pattern.compile("&(?=[0-9a-fk-orA-FK-OR])");
+	private static final int PARSE_CACHE_SIZE = 64;
+	private static final Map<String, Component> PARSED = new LinkedHashMap<>(16, 0.75f, true) {
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<String, Component> eldest) {
+			return this.size() > PARSE_CACHE_SIZE;
+		}
+	};
+
+	/**
+	 * Text content as a chat component: a JSON text component if it is one ({@code {"text":"Hi","color":"gold"}}),
+	 * otherwise the text itself with {@code §} or {@code &} formatting codes ({@code &6&lGold bold}).
+	 */
+	public static Component parse(String text) {
+		synchronized (PARSED) {
+			return PARSED.computeIfAbsent(text, ElementGeometry::parseUncached);
+		}
+	}
+
+	private static Component parseUncached(String text) {
+		String trimmed = text.strip();
+		boolean json = (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+		if (json) {
+			try {
+				JsonElement element = JsonParser.parseString(trimmed);
+				ClientLevel level = Minecraft.getInstance().level;
+				DynamicOps<JsonElement> ops = level == null ? JsonOps.INSTANCE : level.registryAccess().createSerializationContext(JsonOps.INSTANCE);
+				var result = ComponentSerialization.CODEC.parse(ops, element).result();
+				if (result.isPresent()) {
+					return result.get();
+				}
+			} catch (RuntimeException ignored) {
+				// Not valid JSON after all: show it as it is.
+			}
+		}
+		return Component.literal(LEGACY_CODE.matcher(text).replaceAll("§"));
+	}
+
+	/** Number of characters (code points) in a line. */
+	public static int length(FormattedCharSequence line) {
+		int[] count = {0};
+		line.accept((index, style, codePoint) -> {
+			count[0]++;
+			return true;
+		});
+		return count[0];
+	}
+
+	/** The first {@code max} characters of a line. */
+	public static FormattedCharSequence truncate(FormattedCharSequence line, int max) {
+		if (max <= 0) {
+			return FormattedCharSequence.EMPTY;
+		}
+		return sink -> {
+			int[] count = {0};
+			return line.accept((index, style, codePoint) -> count[0]++ < max && sink.accept(index, style, codePoint));
+		};
+	}
+
+	/** A line without its colours (keeping bold, italic and fonts), for single-colour silhouettes. */
+	public static FormattedCharSequence uncoloured(FormattedCharSequence line) {
+		return sink -> line.accept((index, style, codePoint) -> sink.accept(index, style.withColor((net.minecraft.network.chat.TextColor) null), codePoint));
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -216,28 +321,61 @@ public final class ElementGeometry {
 	}
 
 	/**
-	 * Camera-relative model matrix of a world element (multiply by the camera's view rotation to get view space):
-	 * position, then facing, then the element's own rotation and scale. Null if the element can't be placed.
+	 * Camera-relative model matrix of a top-level element (multiply by the camera's view rotation to get view space):
+	 * position, then orientation, then scale. Null if the element can't be placed.
 	 */
-	public static @Nullable Matrix4f worldModel(Element element, ChannelValues transform, Vec3 cameraPos, Quaternionfc cameraOrientation) {
+	public static @Nullable Matrix4f worldModel(Element element, ChannelValues transform, OverlayRenderer.SceneCamera camera) {
 		Vec3 position = worldPosition(element, transform);
 		if (position == null) {
 			return null;
 		}
-		double dx = position.x - cameraPos.x;
-		double dy = position.y - cameraPos.y;
-		double dz = position.z - cameraPos.z;
+		Vec3 relative = position.subtract(camera.position());
+		return new Matrix4f()
+			.translate((float) relative.x, (float) relative.y, (float) relative.z)
+			.rotate(orientation(element, transform, camera, attachYaw(element)))
+			.scale(transform.getFloat(Channel.SCALE_X), transform.getFloat(Channel.SCALE_Y), 1);
+	}
 
-		Matrix4f matrix = new Matrix4f().translate((float) dx, (float) dy, (float) dz);
-		switch (element.facing) {
-			case FACE_CAMERA -> matrix.rotate(cameraOrientation);
-			// The element's front (+Z) points at the camera, rotating around Y only.
-			case Y_AXIS -> matrix.rotateY((float) Math.atan2(-dx, -dz));
-			case FIXED -> matrix.rotateY((float) Math.toRadians(-attachYaw(element)));
-		}
-		matrix.rotate(rotation(transform));
-		matrix.scale(transform.getFloat(Channel.SCALE_X), transform.getFloat(Channel.SCALE_Y), 1);
-		return matrix;
+	/**
+	 * An element's orientation with its billboard mode applied, using the same maths as vanilla display entities.
+	 * Axes that follow the camera ignore the element's own rotation around them.
+	 *
+	 * @param attachYaw degrees the element turns with an entity it is attached to
+	 */
+	public static Quaternionf orientation(Element element, ChannelValues transform, OverlayRenderer.SceneCamera camera, float attachYaw) {
+		float yaw = (float) Math.toRadians(transform.get(Channel.YAW));
+		float pitch = (float) Math.toRadians(transform.get(Channel.PITCH));
+		float roll = (float) Math.toRadians(transform.get(Channel.ROLL));
+		float attach = (float) Math.toRadians(-attachYaw);
+		return switch (element.facing) {
+			case FIXED -> new Quaternionf().rotateY(attach).rotateY(yaw).rotateX(pitch).rotateZ(roll);
+			case HORIZONTAL -> new Quaternionf().rotateY(attach).rotateY(yaw).rotateX(cameraPitch(camera)).rotateZ(roll);
+			case VERTICAL -> new Quaternionf().rotateY(cameraYaw(camera)).rotateX(pitch).rotateZ(roll);
+			case CENTER -> new Quaternionf().rotateY(cameraYaw(camera)).rotateX(cameraPitch(camera)).rotateZ(roll);
+		};
+	}
+
+	/**
+	 * The part of {@link #orientation} that comes from the camera and the entity: the element's own rotation is
+	 * {@code inverse(prefix) * orientation}, read as yaw/pitch/roll (YXZ order) for the axes the mode leaves to it.
+	 */
+	public static Quaternionf orientationPrefix(Facing facing, OverlayRenderer.SceneCamera camera, float attachYaw) {
+		float attach = (float) Math.toRadians(-attachYaw);
+		return switch (facing) {
+			case FIXED, HORIZONTAL -> new Quaternionf().rotateY(attach);
+			case VERTICAL -> new Quaternionf().rotateY(cameraYaw(camera));
+			case CENTER -> new Quaternionf().rotateY(cameraYaw(camera)).rotateX(cameraPitch(camera));
+		};
+	}
+
+	/** Vanilla billboards turn to {@code 180° - camera yaw} around Y... */
+	private static float cameraYaw(OverlayRenderer.SceneCamera camera) {
+		return (float) Math.toRadians(180 - camera.yRot());
+	}
+
+	/** ...and {@code -camera pitch} around X. */
+	private static float cameraPitch(OverlayRenderer.SceneCamera camera) {
+		return (float) Math.toRadians(-camera.xRot());
 	}
 
 	/** Element rotation: yaw around Y, then pitch around X, then roll around Z (degrees). */
@@ -246,19 +384,6 @@ public final class ElementGeometry {
 			.rotateY((float) Math.toRadians(transform.get(Channel.YAW)))
 			.rotateX((float) Math.toRadians(transform.get(Channel.PITCH)))
 			.rotateZ((float) Math.toRadians(transform.get(Channel.ROLL)));
-	}
-
-	// ------------------------------------------------------------------------------------------------
-	// Screen placement
-	// ------------------------------------------------------------------------------------------------
-
-	/** Model matrix of a screen element in frame pixels (origin top-left, y down) for a frame of the given size. */
-	public static Matrix4f screenModel(ChannelValues transform, float width, float height) {
-		return new Matrix4f()
-			.translate(transform.getFloat(Channel.X) * width, transform.getFloat(Channel.Y) * height, 0)
-			.scale(1, -1, 1) // screen pixels grow downwards; the local frame is y-up
-			.rotateZ((float) Math.toRadians(transform.get(Channel.ROLL)))
-			.scale(transform.getFloat(Channel.SCALE_X), transform.getFloat(Channel.SCALE_Y), 1);
 	}
 
 	// ------------------------------------------------------------------------------------------------

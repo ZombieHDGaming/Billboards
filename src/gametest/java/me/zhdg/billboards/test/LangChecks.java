@@ -10,7 +10,7 @@ import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
 import me.zhdg.billboards.model.Gradient;
 import me.zhdg.billboards.model.ShapeKind;
-import me.zhdg.billboards.model.Space;
+import me.zhdg.billboards.model.Lighting;
 import me.zhdg.billboards.model.TextAlign;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.locale.Language;
@@ -34,7 +34,7 @@ final class LangChecks {
 
 			List<String> missing = new ArrayList<>();
 			List<String> names = new ArrayList<>();
-			for (Enum<?>[] values : List.<Enum<?>[]>of(ElementType.values(), Space.values(), Facing.values(), TextAlign.values(),
+			for (Enum<?>[] values : List.<Enum<?>[]>of(ElementType.values(), Lighting.values(), Facing.values(), TextAlign.values(),
 				AttachAnchor.values(), ShapeKind.values(), Gradient.values(), BlendMode.values(), Channel.values(), ViewportTools.Tool.values())) {
 				for (Enum<?> value : values) {
 					try {

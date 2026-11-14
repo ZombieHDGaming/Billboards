@@ -27,7 +27,7 @@ import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
 import me.zhdg.billboards.model.Gradient;
 import me.zhdg.billboards.model.ShapeKind;
-import me.zhdg.billboards.model.Space;
+import me.zhdg.billboards.model.Lighting;
 import me.zhdg.billboards.model.TextAlign;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.Bundles;
@@ -151,75 +151,35 @@ public final class BillboardsWindow {
 	}
 
 	private static void renderAddMenu(BillboardProject project, UUID replayId) {
+		// New overlays go 3 blocks in front of the camera, facing it (or into the selected group).
 		if (ImGui.button(Lang.tr("Add image..."))) {
-			ImGui.openPopup("##billboards_add_image");
+			pickImage(replayId, path -> addPicture(project, replayId, path, ElementType.IMAGE));
 		}
 		sameLineIfFits(Lang.tr("Add video..."));
 		if (ImGui.button(Lang.tr("Add video..."))) {
-			ImGui.openPopup("##billboards_add_video");
+			pickFile(replayId, Lang.tr("Videos"), VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, ElementType.VIDEO));
 		}
 		ImGuiHelper.tooltip(Lang.tr("A video file (MP4, MOV, MKV, WebM...) that plays in sync with the replay. Animated GIFs and PNGs can be added as images."));
 		sameLineIfFits(Lang.tr("Add text"));
 		if (ImGui.button(Lang.tr("Add text"))) {
-			ImGui.openPopup("##billboards_add_text");
+			addText(project);
 		}
+		ImGuiHelper.tooltip(Lang.tr("Text that looks and behaves like a vanilla text display"));
 		sameLineIfFits(Lang.tr("Add shape"));
 		if (ImGui.button(Lang.tr("Add shape"))) {
 			ImGui.openPopup("##billboards_add_shape");
 		}
 		sameLineIfFits(Lang.tr("Add group"));
 		if (ImGui.button(Lang.tr("Add group"))) {
-			ImGui.openPopup("##billboards_add_group");
+			addGroup(project);
 		}
 		ImGuiHelper.tooltip(Lang.tr("Groups move, rotate, scale and fade everything inside them together. Add things to a group by selecting it first, or with \"Move into group\" in the list."));
 
-		if (ImGui.beginPopup("##billboards_add_image")) {
-			if (ImGui.menuItem(Lang.tr("In the world"))) {
-				pickImage(replayId, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.IMAGE));
-			}
-			if (ImGui.menuItem(Lang.tr("On screen"))) {
-				pickImage(replayId, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.IMAGE));
-			}
-			ImGui.endPopup();
-		}
-		if (ImGui.beginPopup("##billboards_add_video")) {
-			if (ImGui.menuItem(Lang.tr("In the world"))) {
-				pickFile(replayId, Lang.tr("Videos"), VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.VIDEO));
-			}
-			if (ImGui.menuItem(Lang.tr("On screen"))) {
-				pickFile(replayId, Lang.tr("Videos"), VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.VIDEO));
-			}
-			ImGui.endPopup();
-		}
-		if (ImGui.beginPopup("##billboards_add_text")) {
-			if (ImGui.menuItem(Lang.tr("In the world"))) {
-				addText(project, Space.WORLD);
-			}
-			if (ImGui.menuItem(Lang.tr("On screen"))) {
-				addText(project, Space.SCREEN);
-			}
-			ImGui.endPopup();
-		}
 		if (ImGui.beginPopup("##billboards_add_shape")) {
 			for (ShapeKind kind : ShapeKind.values()) {
-				if (ImGui.beginMenu(Lang.tr(kind.displayName))) {
-					if (ImGui.menuItem(Lang.tr("In the world"))) {
-						addShape(project, kind, Space.WORLD);
-					}
-					if (ImGui.menuItem(Lang.tr("On screen"))) {
-						addShape(project, kind, Space.SCREEN);
-					}
-					ImGui.endMenu();
+				if (ImGui.menuItem(Lang.tr(kind.displayName))) {
+					addShape(project, kind);
 				}
-			}
-			ImGui.endPopup();
-		}
-		if (ImGui.beginPopup("##billboards_add_group")) {
-			if (ImGui.menuItem(Lang.tr("In the world"))) {
-				addGroup(project, Space.WORLD);
-			}
-			if (ImGui.menuItem(Lang.tr("On screen"))) {
-				addGroup(project, Space.SCREEN);
 			}
 			ImGui.endPopup();
 		}
@@ -242,7 +202,7 @@ public final class BillboardsWindow {
 		if (ImGui.checkbox(Lang.tr("Snap"), ViewportTools.snap)) {
 			ViewportTools.snap = !ViewportTools.snap;
 		}
-		ImGuiHelper.tooltip(Lang.tr("Move in 0.25 block steps (1% of the frame on screen), rotate in 15° steps, scale in 0.1 steps"));
+		ImGuiHelper.tooltip(Lang.tr("Move in 0.25 block steps, rotate in 15° steps, scale in 0.1 steps"));
 		ImGui.sameLine();
 		if (ImGui.checkbox(Lang.tr("Auto-key"), ViewportTools.autoKey)) {
 			ViewportTools.autoKey = !ViewportTools.autoKey;
@@ -284,7 +244,7 @@ public final class BillboardsWindow {
 			ImGuiHelper.tooltip(element.type == ElementType.GROUP ? Lang.tr("Show or hide this group and everything in it") : Lang.tr("Show or hide this overlay (also in exports)"));
 			ImGui.sameLine();
 
-			String label = (element.type == ElementType.GROUP ? "[+] " : "") + element.name + "  (" + Lang.tr(element.type.displayName) + ", " + Lang.tr(element.space.displayName) + ")";
+			String label = (element.type == ElementType.GROUP ? "[+] " : "") + element.name + "  (" + Lang.tr(element.type.displayName) + ")";
 			if (ImGui.selectable(label, Selection.is(element.id))) {
 				Selection.set(element.id);
 			}
@@ -310,7 +270,7 @@ public final class BillboardsWindow {
 					action[0] = () -> swap(project, element, next);
 				}
 				List<Element> groups = project.elements.stream()
-					.filter(g -> g.type == ElementType.GROUP && g.space == element.space && !project.isWithin(g, element.id) && !g.id.equals(element.parentId))
+					.filter(g -> g.type == ElementType.GROUP && !project.isWithin(g, element.id) && !g.id.equals(element.parentId))
 					.toList();
 				if (ImGui.beginMenu(Lang.tr("Move into group"), !groups.isEmpty())) {
 					for (Element group : groups) {
@@ -342,7 +302,7 @@ public final class BillboardsWindow {
 		}
 	}
 
-	/** Swaps two siblings' places in the project's list (which is also their order on screen within a layer). */
+	/** Swaps two siblings' places in the project's list (which is also their draw order within a layer). */
 	private static void swap(BillboardProject project, Element a, Element b) {
 		int indexA = project.elements.indexOf(a);
 		int indexB = project.elements.indexOf(b);
@@ -350,7 +310,7 @@ public final class BillboardsWindow {
 		project.elements.set(indexB, a);
 	}
 
-	/** Moves an element into a group (or to the top level), keeping it where it is on screen / in the world. */
+	/** Moves an element into a group (or to the top level), keeping it where it is in the world. */
 	private static void reparent(BillboardProject project, EditorState editorState, Element element, @Nullable Element newParent) {
 		SceneFrame scene = SceneFrame.current();
 		if (scene != null) {
@@ -514,7 +474,6 @@ public final class BillboardsWindow {
 			Path file = Bundles.presetPath(name);
 			Bundles.Bundle bundle = Bundles.read(file);
 			Element probe = new Element();
-			probe.space = Space.WORLD;
 			place(probe);
 			Vec3 inFront = new Vec3(probe.transform.get(Channel.X), probe.transform.get(Channel.Y), probe.transform.get(Channel.Z));
 			List<Element> roots = Bundles.insert(file, bundle, replayId, project, editorState, Math.max(0, PlaybackTime.cursorTick()), inFront);
@@ -646,20 +605,22 @@ public final class BillboardsWindow {
 	private static boolean renderSettings(BillboardProject project, UUID replayId, Element element) {
 		boolean changed = false;
 
-		if (element.space == Space.WORLD) {
-			Facing facing = enumCombo(Lang.tr("Facing"), element.facing, Facing.values(), f -> f.displayName);
-			if (facing != element.facing) {
-				element.facing = facing;
-				changed = true;
-			}
-			if (ImGui.checkbox(Lang.tr("Hidden behind blocks"), element.depthTest)) {
-				element.depthTest = !element.depthTest;
-				changed = true;
-			}
-			ImGuiHelper.tooltip(Lang.tr("When off, the overlay is always drawn on top of the world"));
-			if (element.parentId == null && renderAttachment(element)) {
-				changed = true;
-			}
+		Facing facing = enumCombo(Lang.tr("Billboard"), element.facing, Facing.values(), f -> f.displayName);
+		if (facing != element.facing) {
+			element.facing = facing;
+			changed = true;
+		}
+		ImGuiHelper.tooltip(Lang.tr("How the overlay turns towards the camera, like a display entity's billboard setting. Fixed uses its own rotation; the others follow the camera on some axes"));
+		if (ImGui.checkbox(Lang.tr("See through blocks"), !element.depthTest)) {
+			element.depthTest = !element.depthTest;
+			changed = true;
+		}
+		ImGuiHelper.tooltip(Lang.tr("Draw the overlay on top of blocks and entities, like a see-through text display"));
+		if (element.type != ElementType.GROUP) {
+			changed |= renderLighting(element);
+		}
+		if (element.parentId == null && renderAttachment(element)) {
+			changed = true;
 		}
 
 		if (element.type != ElementType.GROUP) {
@@ -680,14 +641,12 @@ public final class BillboardsWindow {
 				element.layer = layer[0];
 				changed = true;
 			}
-			ImGuiHelper.tooltip(element.space == Space.SCREEN
-				? Lang.tr("Higher layers are drawn on top (a group's contents are drawn in list order)")
-				: Lang.tr("Only affects overlays that are not hidden behind blocks; the rest are sorted by distance"));
+			ImGuiHelper.tooltip(Lang.tr("Draw order of see-through overlays (higher on top); the rest are sorted by distance"));
 		} else {
 			ImGui.textDisabled(Lang.tr("Inside a group: position is relative to the group."));
 		}
 
-		String unit = element.space == Space.WORLD ? Lang.tr("blocks") : Lang.tr("of frame height");
+		String unit = Lang.tr("blocks");
 		if (element.type.isPicture()) {
 			boolean video = element.type == ElementType.VIDEO;
 			String fileName = element.assetId == null ? "(none)" : project.assets.getOrDefault(element.assetId, element.assetId);
@@ -744,11 +703,12 @@ public final class BillboardsWindow {
 					changed = true;
 				}
 			}
-			float[] fontSize = {element.fontSize};
-			if (ImGui.dragFloat(Lang.tr("Line height (%s)", unit), fontSize, 0.002f, 0.001f, 1000f, "%.3f")) {
-				element.fontSize = fontSize[0];
+			int[] lineWidth = {element.lineWidth};
+			if (ImGuiHelper.inputInt(Lang.tr("Line width"), lineWidth)) {
+				element.lineWidth = Math.max(1, lineWidth[0]);
 				changed = true;
 			}
+			ImGuiHelper.tooltip(Lang.tr("Lines longer than this wrap, in font pixels (40 pixels = 1 block). Vanilla's default is 200. Make text bigger with the Scale channel"));
 			TextAlign align = enumCombo(Lang.tr("Align"), element.align, TextAlign.values(), a -> a.displayName);
 			if (align != element.align) {
 				element.align = align;
@@ -761,6 +721,41 @@ public final class BillboardsWindow {
 			float[] background = argbToFloats(element.backgroundColor);
 			if (ImGui.colorEdit4(Lang.tr("Background"), background)) {
 				element.backgroundColor = floatsToArgb(background);
+				changed = true;
+			}
+			if (element.backgroundColor != DEFAULT_TEXT_BACKGROUND) {
+				ImGui.sameLine();
+				if (ImGui.smallButton(Lang.tr("Default##background"))) {
+					element.backgroundColor = DEFAULT_TEXT_BACKGROUND;
+					changed = true;
+				}
+				ImGuiHelper.tooltip(Lang.tr("Vanilla's default text background: black, a quarter opaque"));
+			}
+		}
+		return changed;
+	}
+
+	/** Vanilla text displays' default background (the default "text background opacity" of 25%). */
+	private static final int DEFAULT_TEXT_BACKGROUND = 0x40000000;
+
+	/** How the overlay is lit. Returns true if anything changed. */
+	private static boolean renderLighting(Element element) {
+		boolean changed = false;
+		Lighting lighting = enumCombo(Lang.tr("Lighting"), element.lighting, Lighting.values(), l -> l.displayName);
+		if (lighting != element.lighting) {
+			element.lighting = lighting;
+			changed = true;
+		}
+		ImGuiHelper.tooltip(Lang.tr("World light darkens the overlay at night and in caves, like a vanilla text display. Custom levels work like a display entity's brightness override"));
+		if (element.lighting == Lighting.CUSTOM) {
+			int[] block = {element.blockLight};
+			if (ImGui.sliderInt(Lang.tr("Block light"), block, 0, 15)) {
+				element.blockLight = block[0];
+				changed = true;
+			}
+			int[] sky = {element.skyLight};
+			if (ImGui.sliderInt(Lang.tr("Sky light"), sky, 0, 15)) {
+				element.skyLight = sky[0];
 				changed = true;
 			}
 		}
@@ -899,7 +894,7 @@ public final class BillboardsWindow {
 		}
 
 		ChannelValues shown = (state == TrackEditor.KeyState.NOT_ANIMATED ? element.base(channel) : OverlayRenderer.valuesOf(frame, element, channel)).copy();
-		boolean changed = ChannelEditor.render(shown, element.space, shown::set, text -> shown.text = text);
+		boolean changed = ChannelEditor.render(shown, shown::set, text -> shown.text = text);
 		if (changed) {
 			ViewportTools.commitValues(project, editorState, element, shown);
 		}
@@ -948,7 +943,7 @@ public final class BillboardsWindow {
 	/** Blend mode and effects. Returns true if anything changed. */
 	private static boolean renderLookSettings(Element element) {
 		boolean changed = false;
-		String unit = element.space == Space.WORLD ? Lang.tr("blocks") : Lang.tr("of frame height");
+		String unit = Lang.tr("blocks");
 		BlendMode blend = enumCombo(Lang.tr("Blend"), element.blend, BlendMode.values(), b -> b.displayName);
 		if (blend != element.blend) {
 			element.blend = blend;
@@ -1081,24 +1076,16 @@ public final class BillboardsWindow {
 		return changed;
 	}
 
-	private static void addShape(BillboardProject project, ShapeKind kind, Space space) {
+	private static void addShape(BillboardProject project, ShapeKind kind) {
 		Element element = new Element();
 		element.type = ElementType.SHAPE;
-		element.space = space;
 		element.shapeKind = kind;
 		element.name = Lang.tr(kind.displayName) + " " + (project.elements.size() + 1);
 		boolean lineLike = kind == ShapeKind.LINE || kind == ShapeKind.ARROW;
-		if (space == Space.WORLD) {
-			element.width = 2;
-			element.height = lineLike ? 0.5f : 1;
-			element.strokeWidth = lineLike ? 0.1f : 0;
-			element.cornerRadius = 0.2f;
-		} else {
-			element.width = 0.6f;
-			element.height = lineLike ? 0.08f : 0.15f;
-			element.strokeWidth = lineLike ? 0.015f : 0;
-			element.cornerRadius = 0.03f;
-		}
+		element.width = 2;
+		element.height = lineLike ? 0.5f : 1;
+		element.strokeWidth = lineLike ? 0.1f : 0;
+		element.cornerRadius = 0.2f;
 		if (lineLike) {
 			element.fillColor = 0xFFFFFFFF;
 			element.fillColor2 = 0xFFFFFFFF;
@@ -1107,10 +1094,9 @@ public final class BillboardsWindow {
 		add(project, element);
 	}
 
-	private static void addGroup(BillboardProject project, Space space) {
+	private static void addGroup(BillboardProject project) {
 		Element element = new Element();
 		element.type = ElementType.GROUP;
-		element.space = space;
 		element.name = Lang.tr("Group %s", project.elements.size() + 1);
 		place(element);
 		// New groups start at the top level even when another group is selected (nest them with "Move into group").
@@ -1132,35 +1118,31 @@ public final class BillboardsWindow {
 		}
 	}
 
-	private static void addText(BillboardProject project, Space space) {
+	/** Text set up like a new vanilla text display: anchored at its bottom centre, lit by the world. */
+	private static void addText(BillboardProject project) {
 		Element element = new Element();
 		element.type = ElementType.TEXT;
-		element.space = space;
 		element.name = Lang.tr("Text %s", project.elements.size() + 1);
 		element.content.text = Lang.tr("Your text here");
-		element.fontSize = space == Space.WORLD ? 0.25f : 0.06f;
+		element.pivotX = 0.5f;
+		element.pivotY = 1.0f;
+		element.lighting = Lighting.WORLD;
 		place(element);
 		add(project, element);
 	}
 
-	private static void addPicture(BillboardProject project, UUID replayId, Path path, Space space, ElementType type) {
+	private static void addPicture(BillboardProject project, UUID replayId, Path path, ElementType type) {
 		Element element = new Element();
 		element.type = type;
 		element.mediaStartTick = Math.max(0, PlaybackTime.cursorTick());
 		element.mediaLoop = type == ElementType.IMAGE;
-		element.space = space;
 		element.name = stripExtension(path.getFileName().toString());
 		if (!importInto(project, replayId, element, path)) {
 			return;
 		}
 		float aspect = aspect(path, type);
-		if (space == Space.WORLD) {
-			element.width = 2.0f;
-			element.height = 2.0f / aspect;
-		} else {
-			element.height = 0.25f;
-			element.width = 0.25f * aspect;
-		}
+		element.width = 2.0f;
+		element.height = 2.0f / aspect;
 		place(element);
 		add(project, element);
 	}
@@ -1185,9 +1167,9 @@ public final class BillboardsWindow {
 	}
 
 	private static void add(BillboardProject project, Element element) {
-		// With a group of the same space selected, the new element goes into it, at the group's origin.
+		// With a group selected, the new element goes into it, at the group's origin.
 		Element selected = Selection.get(project);
-		if (selected != null && selected.type == ElementType.GROUP && selected.space == element.space) {
+		if (selected != null && selected.type == ElementType.GROUP) {
 			element.parentId = selected.id;
 			for (int component : new int[]{Channel.X, Channel.Y, Channel.Z, Channel.PITCH, Channel.YAW, Channel.ROLL}) {
 				element.transform.set(component, 0);
@@ -1198,15 +1180,9 @@ public final class BillboardsWindow {
 		Selection.set(element.id);
 	}
 
-	/** World: 3 blocks in front of the camera, facing it. Screen: the centre of the frame. */
+	/** 3 blocks in front of the camera, facing it. */
 	private static void place(Element element) {
 		ChannelValues transform = element.transform;
-		if (element.space == Space.SCREEN) {
-			transform.set(Channel.X, 0.5);
-			transform.set(Channel.Y, 0.5);
-			return;
-		}
-
 		Camera camera = Minecraft.getInstance().gameRenderer.mainCamera();
 		Vec3 eye = camera.position();
 		Vector3fc forward = camera.forwardVector();

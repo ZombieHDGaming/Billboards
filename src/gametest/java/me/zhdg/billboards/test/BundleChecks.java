@@ -8,7 +8,6 @@ import me.zhdg.billboards.model.BillboardProject;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.Bundles;
 import me.zhdg.billboards.project.ProjectManager;
@@ -96,7 +95,6 @@ final class BundleChecks {
 			// Relink: an element whose file is missing gets pointed at a new file.
 			Element broken = new Element();
 			broken.type = ElementType.IMAGE;
-			broken.space = Space.SCREEN;
 			broken.hidden = true;
 			broken.assetId = "0000000000000000000000000000000000000000000000000000000000000000.png";
 			project.elements.add(broken);

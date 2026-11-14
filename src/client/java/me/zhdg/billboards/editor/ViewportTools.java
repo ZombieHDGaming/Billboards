@@ -18,13 +18,10 @@ import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
 import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
-import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.OverlayRenderer;
 import me.zhdg.billboards.render.SceneFrame;
-import net.minecraft.client.Minecraft;
-import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
@@ -59,8 +56,6 @@ public final class ViewportTools {
 	private static final float SNAP_WORLD_MOVE = 0.25f;
 	private static final float SNAP_ROTATE = 15f;
 	private static final float SNAP_SCALE = 0.1f;
-	/** Screen-space moves snap to 1% of the frame height. */
-	private static final float SNAP_SCREEN_MOVE_FRACTION = 0.01f;
 
 	public static Tool tool = Tool.MOVE;
 	/** Gizmo axes follow the element's rotation (true) or the world axes (false). */
@@ -146,7 +141,7 @@ public final class ViewportTools {
 			Frame frame = new Frame(scene, camera, rectX, rectY, rectW, rectH);
 			if (selected.type == ElementType.GROUP) {
 				// Outline everything inside the group.
-				for (SceneFrame.Node other : scene.drawables(selected.space)) {
+				for (SceneFrame.Node other : scene.drawables()) {
 					if (project.isWithin(other.element(), selected.id)) {
 						drawOutline(frame, other, GROUP_OUTLINE_COLOUR, 1.5f);
 					}
@@ -161,12 +156,11 @@ public final class ViewportTools {
 
 		// Click to select. A click on empty space keeps Flashback's behaviour (grabbing the mouse to look around).
 		if (hovered && ImGui.isMouseClicked(ImGuiMouseButton.Left) && !gizmoActive && !gizmoHovered) {
-			Vec2 fraction = ReplayUI.getMouseViewportFraction();
 			// ReplayUI.getMouseLookVector() needs Flashback's "frame hovered" flag, which it only sets later in the
 			// frame, so build the ray from the parts that don't.
 			Vec3 forwards = ReplayUI.getForwardsVector(ReplayUI.getIO().getMousePosX(), ReplayUI.getIO().getMousePosY());
 			Vec3 direction = forwards == null ? null : ReplayUI.getMouseLookVectorFromForwards(forwards);
-			UUID hit = ViewportPicker.pick(fraction.x, fraction.y, direction);
+			UUID hit = direction == null ? null : ViewportPicker.pick(direction);
 			if (hit != null) {
 				Selection.set(hit);
 				consumedClick = true;
@@ -186,46 +180,33 @@ public final class ViewportTools {
 		Element element = node.element();
 		// The node's transform already shows the drag preview, if a drag is in progress.
 		ChannelValues start = node.transform();
-		boolean screen = element.space == Space.SCREEN;
 
-		float[] view;
-		float[] projection;
-		Matrix4f model;
-		Matrix4f parent;
-		int operation;
-		if (screen) {
-			view = new Matrix4f().get(new float[16]);
-			projection = new Matrix4f().setOrtho(0, frame.rectW(), 0, frame.rectH(), -1, 1).get(new float[16]);
-			parent = screenGizmoParent(frame.scene(), node, frame.rectW(), frame.rectH());
-			model = new Matrix4f(parent).mul(SceneFrame.screenLocal(start, frame.rectW(), frame.rectH()));
-			operation = switch (tool) {
-				case MOVE -> Operation.TRANSLATE_X | Operation.TRANSLATE_Y;
-				case ROTATE -> Operation.ROTATE_Z;
-				case SCALE -> Operation.SCALE_X | Operation.SCALE_Y;
-			};
-		} else {
-			model = frame.scene().worldModel(node, frame.camera().position(), frame.camera().orientation());
-			parent = frame.scene().parentWorldModel(node, frame.camera().position(), frame.camera().orientation());
-			if (model == null) {
-				cancelDrag();
-				return; // attached to an entity that isn't loaded
-			}
-			view = frame.camera().viewRotation().get(new float[16]);
-			projection = gizmoProjection(frame.camera().projection()).get(new float[16]);
-			operation = switch (tool) {
-				case MOVE -> Operation.TRANSLATE;
-				// Camera-facing elements get their orientation from the camera, so only roll is theirs to change.
-				case ROTATE -> element.facing == Facing.FIXED ? Operation.ROTATE : Operation.ROTATE_Z;
-				case SCALE -> Operation.SCALE_X | Operation.SCALE_Y;
-			};
+		Matrix4f model = frame.scene().worldModel(node, frame.camera());
+		Matrix4f parent = frame.scene().parentWorldModel(node, frame.camera());
+		if (model == null) {
+			cancelDrag();
+			return; // attached to an entity that isn't loaded
 		}
+		float[] view = frame.camera().viewRotation().get(new float[16]);
+		float[] projection = gizmoProjection(frame.camera().projection()).get(new float[16]);
+		int operation = switch (tool) {
+			case MOVE -> Operation.TRANSLATE;
+			// Axes that follow the camera aren't the element's to change.
+			case ROTATE -> switch (element.facing) {
+				case FIXED -> Operation.ROTATE;
+				case VERTICAL -> Operation.ROTATE_X | Operation.ROTATE_Z;
+				case HORIZONTAL -> Operation.ROTATE_Y | Operation.ROTATE_Z;
+				case CENTER -> Operation.ROTATE_Z;
+			};
+			case SCALE -> Operation.SCALE_X | Operation.SCALE_Y;
+		};
 
 		float[] matrix = model.get(new float[16]);
 		float[] before = matrix.clone();
-		ImGuizmo.setOrthographic(screen);
+		ImGuizmo.setOrthographic(false);
 		ImGuizmo.setID(element.id.hashCode());
 		int mode = localAxes || tool == Tool.SCALE ? Mode.LOCAL : Mode.WORLD;
-		float[] snapValues = snap ? snapValues(screen, frame.rectH()) : null;
+		float[] snapValues = snap ? snapValues() : null;
 		if (snapValues != null) {
 			ImGuizmo.manipulate(view, projection, operation, mode, matrix, null, snapValues);
 		} else {
@@ -236,9 +217,7 @@ public final class ViewportTools {
 			ChannelValues updated = start;
 			if (!java.util.Arrays.equals(before, matrix)) {
 				Matrix4f changed = new Matrix4f().set(matrix);
-				updated = screen
-					? applyScreenLocal(start, new Matrix4f(parent).invert().mul(changed), frame.rectW(), frame.rectH())
-					: applyWorld(element, start, changed, frame.camera(), parent);
+				updated = applyWorld(element, start, changed, frame.camera(), parent);
 			}
 			drag = new Drag(element.id, updated);
 		} else if (drag != null) {
@@ -247,20 +226,9 @@ public final class ViewportTools {
 		}
 	}
 
-	/**
-	 * Maps a screen element's parent frame into ImGuizmo's frame space (pixels, origin bottom-left, y up):
-	 * flip y and move the origin to the bottom, then apply the groups the element is in.
-	 */
-	private static Matrix4f screenGizmoParent(SceneFrame scene, SceneFrame.Node node, float width, float height) {
-		return new Matrix4f().translate(0, height, 0).scale(1, -1, 1).mul(scene.parentScreenModel(node, width, height));
-	}
-
-	private static float[] snapValues(boolean screen, float rectH) {
+	private static float[] snapValues() {
 		return switch (tool) {
-			case MOVE -> {
-				float step = screen ? rectH * SNAP_SCREEN_MOVE_FRACTION : SNAP_WORLD_MOVE;
-				yield new float[]{step, step, step};
-			}
+			case MOVE -> new float[]{SNAP_WORLD_MOVE, SNAP_WORLD_MOVE, SNAP_WORLD_MOVE};
 			case ROTATE -> new float[]{SNAP_ROTATE, SNAP_ROTATE, SNAP_ROTATE};
 			case SCALE -> new float[]{SNAP_SCALE, SNAP_SCALE, SNAP_SCALE};
 		};
@@ -295,38 +263,6 @@ public final class ViewportTools {
 	// Matrix <-> transform values
 	// ------------------------------------------------------------------------------------------------
 
-	/** A top-level screen element in frame pixels with y up (ImGuizmo's convention): translate, roll, scale. */
-	public static Matrix4f screenGizmoModel(ChannelValues transform, float width, float height) {
-		return new Matrix4f()
-			.translate(transform.getFloat(Channel.X) * width, (1 - transform.getFloat(Channel.Y)) * height, 0)
-			.rotateZ((float) Math.toRadians(transform.get(Channel.ROLL)))
-			.scale(transform.getFloat(Channel.SCALE_X), transform.getFloat(Channel.SCALE_Y), 1);
-	}
-
-	/** Reads a top-level screen element's values back from its {@link #screenGizmoModel}. */
-	public static ChannelValues applyScreen(ChannelValues start, Matrix4f model, float width, float height) {
-		return applyScreenLocal(start, new Matrix4f().translate(0, -height, 0).mul(model), width, height);
-	}
-
-	/** Reads values back from a matrix in the element's parent frame (see {@link SceneFrame#screenLocal}). */
-	public static ChannelValues applyScreenLocal(ChannelValues start, Matrix4f local, float width, float height) {
-		return keepOtherTools(start, decomposeScreen(start, local, width, height));
-	}
-
-	/** All transform values from a matrix in the element's parent frame, regardless of the active tool. */
-	public static ChannelValues decomposeScreen(ChannelValues start, Matrix4f local, float width, float height) {
-		ChannelValues out = start.copy();
-		Vector3f translation = local.getTranslation(new Vector3f());
-		out.set(Channel.X, translation.x / width);
-		out.set(Channel.Y, -translation.y / height);
-		double roll = Math.toDegrees(Math.atan2(local.m01(), local.m00()));
-		out.set(Channel.ROLL, unwrap(roll, start.get(Channel.ROLL)));
-		Vector3f scale = local.getScale(new Vector3f());
-		out.set(Channel.SCALE_X, Math.copySign(scale.x, start.get(Channel.SCALE_X)));
-		out.set(Channel.SCALE_Y, Math.copySign(scale.y, start.get(Channel.SCALE_Y)));
-		return out;
-	}
-
 	/** Reads values back from a top-level world element's camera-relative model matrix. */
 	public static ChannelValues applyWorld(Element element, ChannelValues start, Matrix4f model, OverlayRenderer.SceneCamera camera) {
 		return applyWorld(element, start, model, camera, null);
@@ -354,7 +290,7 @@ public final class ViewportTools {
 			out.set(Channel.X, position.x);
 			out.set(Channel.Y, position.y);
 			out.set(Channel.Z, position.z);
-			setRotation(out, start, local.getNormalizedRotation(new Quaternionf()));
+			setRotation(out, start, local.getUnnormalizedRotation(new Quaternionf()));
 			Vector3f scale = local.getScale(new Vector3f());
 			out.set(Channel.SCALE_X, Math.copySign(scale.x, start.get(Channel.SCALE_X)));
 			out.set(Channel.SCALE_Y, Math.copySign(scale.y, start.get(Channel.SCALE_Y)));
@@ -376,13 +312,23 @@ public final class ViewportTools {
 			}
 		}
 
-		Quaternionf total = model.getNormalizedRotation(new Quaternionf());
-		Quaternionf own = switch (element.facing) {
-			case FIXED -> new Quaternionf().rotateY((float) Math.toRadians(ElementGeometry.attachYaw(element))).mul(total);
-			case FACE_CAMERA -> new Quaternionf(camera.orientation()).conjugate().mul(total);
-			case Y_AXIS -> new Quaternionf().rotateY((float) -Math.atan2(-translation.x, -translation.z)).mul(total);
-		};
-		setRotation(out, start, own);
+		// The element's own rotation is what's left after the billboard (and entity) part.
+		Quaternionf total = model.getUnnormalizedRotation(new Quaternionf());
+		float attachYaw = parent == null ? ElementGeometry.attachYaw(element) : 0;
+		Quaternionf own = ElementGeometry.orientationPrefix(element.facing, camera, attachYaw).conjugate().mul(total);
+		Vector3f euler = own.getEulerAnglesYXZ(new Vector3f());
+		switch (element.facing) {
+			case FIXED -> setRotation(out, start, own);
+			case HORIZONTAL -> {
+				out.set(Channel.YAW, unwrap(Math.toDegrees(euler.y), start.get(Channel.YAW)));
+				out.set(Channel.ROLL, unwrap(Math.toDegrees(euler.z), start.get(Channel.ROLL)));
+			}
+			case VERTICAL -> {
+				out.set(Channel.PITCH, unwrap(Math.toDegrees(euler.x), start.get(Channel.PITCH)));
+				out.set(Channel.ROLL, unwrap(Math.toDegrees(euler.z), start.get(Channel.ROLL)));
+			}
+			case CENTER -> out.set(Channel.ROLL, unwrap(Math.toDegrees(euler.z), start.get(Channel.ROLL)));
+		}
 
 		Vector3f scale = model.getScale(new Vector3f());
 		Vector3f parentScale = parent == null ? new Vector3f(1, 1, 1) : parent.getScale(new Vector3f());
@@ -398,20 +344,12 @@ public final class ViewportTools {
 	 */
 	public static @Nullable ChannelValues reparentedTransform(SceneFrame scene, SceneFrame.Node node, @Nullable SceneFrame.Node newParent) {
 		Element element = node.element();
-		if (element.space == Space.SCREEN) {
-			var target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
-			float width = target.width;
-			float height = target.height;
-			Matrix4f model = scene.screenModel(node, width, height);
-			Matrix4f parent = newParent == null ? new Matrix4f().scale(1, -1, 1) : scene.screenModel(newParent, width, height);
-			return decomposeScreen(node.transform(), parent.invert().mul(model), width, height);
-		}
 		OverlayRenderer.SceneCamera camera = OverlayRenderer.lastCamera();
 		if (camera == null) {
 			return null;
 		}
-		Matrix4f model = scene.worldModel(node, camera.position(), camera.orientation());
-		Matrix4f parent = newParent == null ? null : scene.worldModel(newParent, camera.position(), camera.orientation());
+		Matrix4f model = scene.worldModel(node, camera);
+		Matrix4f parent = newParent == null ? null : scene.worldModel(newParent, camera);
 		if (model == null || (newParent != null && parent == null)) {
 			return null;
 		}
@@ -486,33 +424,19 @@ public final class ViewportTools {
 		Element element = node.element();
 		ImDrawList drawList = ImGui.getWindowDrawList();
 		float[][] points = new float[4][];
-		if (element.space == Space.SCREEN) {
-			var target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
-			ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, node.content(), target.height);
-			if (bounds == null) {
-				return;
+		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, node.content());
+		Matrix4f model = frame.scene().worldModel(node, frame.camera());
+		if (bounds == null || model == null) {
+			return;
+		}
+		Matrix4f clip = new Matrix4f(gizmoProjection(frame.camera().projection())).mul(frame.camera().viewRotation()).mul(model);
+		float[][] corners = corners(bounds);
+		for (int i = 0; i < 4; i++) {
+			Vector4f p = clip.transform(new Vector4f(corners[i][0], corners[i][1], 0, 1));
+			if (p.w <= 0.01f) {
+				return; // behind the camera
 			}
-			Matrix4f model = frame.scene().screenModel(node, target.width, target.height);
-			float[][] corners = corners(bounds);
-			for (int i = 0; i < 4; i++) {
-				Vector4f p = model.transform(new Vector4f(corners[i][0], corners[i][1], 0, 1));
-				points[i] = new float[]{frame.rectX() + p.x / target.width * frame.rectW(), frame.rectY() + p.y / target.height * frame.rectH()};
-			}
-		} else {
-			ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, node.content(), 1);
-			Matrix4f model = frame.scene().worldModel(node, frame.camera().position(), frame.camera().orientation());
-			if (bounds == null || model == null) {
-				return;
-			}
-			Matrix4f clip = new Matrix4f(gizmoProjection(frame.camera().projection())).mul(frame.camera().viewRotation()).mul(model);
-			float[][] corners = corners(bounds);
-			for (int i = 0; i < 4; i++) {
-				Vector4f p = clip.transform(new Vector4f(corners[i][0], corners[i][1], 0, 1));
-				if (p.w <= 0.01f) {
-					return; // behind the camera
-				}
-				points[i] = new float[]{frame.rectX() + (p.x / p.w * 0.5f + 0.5f) * frame.rectW(), frame.rectY() + (0.5f - p.y / p.w * 0.5f) * frame.rectH()};
-			}
+			points[i] = new float[]{frame.rectX() + (p.x / p.w * 0.5f + 0.5f) * frame.rectW(), frame.rectY() + (0.5f - p.y / p.w * 0.5f) * frame.rectH()};
 		}
 		drawList.addQuad(points[0][0], points[0][1], points[1][0], points[1][1], points[2][0], points[2][1], points[3][0], points[3][1],
 			colour, thickness);

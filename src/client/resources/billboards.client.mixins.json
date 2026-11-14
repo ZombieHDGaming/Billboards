@@ -5,7 +5,6 @@
 	"client": [
 		"EditorStateAccessor",
 		"FlashbackGsonMixin",
-		"GameRendererMixin",
 		"KeyframeTypeAdapterMixin",
 		"LevelRendererMixin",
 		"MainMenuBarMixin",

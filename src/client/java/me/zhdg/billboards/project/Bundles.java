@@ -10,7 +10,6 @@ import me.zhdg.billboards.model.BillboardProject;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
-import me.zhdg.billboards.model.Space;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -275,7 +274,7 @@ public final class Bundles {
 		double[] move = null;
 		if (worldMoveTo != null) {
 			for (Element element : bundle.elements()) {
-				if (element.parentId == null && element.space == Space.WORLD && element.attachEntity == null) {
+				if (element.parentId == null && element.attachEntity == null) {
 					move = new double[]{worldMoveTo.x - element.transform.get(Channel.X), worldMoveTo.y - element.transform.get(Channel.Y),
 						worldMoveTo.z - element.transform.get(Channel.Z)};
 					break;
@@ -297,7 +296,7 @@ public final class Bundles {
 				element.fontAssetId = assetIds.getOrDefault(element.fontAssetId, element.fontAssetId);
 			}
 			element.mediaStartTick += tickOffset;
-			boolean moved = move != null && element.parentId == null && element.space == Space.WORLD && element.attachEntity == null;
+			boolean moved = move != null && element.parentId == null && element.attachEntity == null;
 			if (moved) {
 				shift(element.transform, move);
 			}
@@ -315,7 +314,7 @@ public final class Bundles {
 					continue;
 				}
 				boolean moved = move != null && track.channel() == Channel.TRANSFORM && element.parentId == null
-					&& element.space == Space.WORLD && element.attachEntity == null;
+					&& element.attachEntity == null;
 				List<TrackEditor.KeyframeData> keyframes = new ArrayList<>();
 				for (TrackEditor.KeyframeData keyframe : track.keyframes()) {
 					ChannelValues values = keyframe.values().copy();
