@@ -116,6 +116,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		MediaChecks.run(context);
 		EffectsChecks.run(context);
 		BundleChecks.run(context);
+		LangChecks.run(context);
 		log("All Billboards checks passed");
 
 		// Leave the replay (on Minecraft's own task loop, for the same reason as opening it) so the test ends cleanly.

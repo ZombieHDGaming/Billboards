@@ -39,7 +39,17 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
    takes MP4, MOV, MKV, WebM and more. They play in sync with the replay (following its speed), starting at a chosen
    tick, at a chosen speed, looping or holding the last frame. Exports get exactly the right frame for every exported
    frame. Video sound isn't included.
-10. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
+10. **Look** (inspector): blend mode (normal, additive, multiply, screen), drop shadow, outline, glow, and blur for
+    images and videos.
+11. **Presets** (*Presets* menu): right-click an overlay or group in the list and *Save as preset...* to reuse it,
+    with its animation, in any replay. Presets are inserted at the timeline cursor; world presets in front of the
+    camera.
+12. **Sharing** (*Share* menu): Flashback keeps its editor data (keyframes) outside the replay file, and so does
+    Billboards. To give someone a replay with its overlays, *Export pack...* and send the pack with the replay; they
+    open the replay and *Import pack...*.
+13. **Missing files** are listed at the top of the window and shown as a magenta checkerboard; *Relink...* points them
+    at a file again.
+14. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
 
 | Channel | Values |
 |---|---|
@@ -58,9 +68,16 @@ original file doesn't break the replay.
 
 ## Status
 
-Milestones 1-4 of the [design](docs/DESIGN.md): images, text, shapes, groups, animated GIFs/PNGs and videos in world
-and screen space with keyframed transform, appearance and content; custom fonts; viewport selection,
-move/rotate/scale gizmos and entity attachment. Blend modes, effects and presets are planned for the last milestone.
+All five milestones of the [design](docs/DESIGN.md) are implemented: images, text, shapes, groups, animated
+GIFs/PNGs and videos in world and screen space with keyframed transform, appearance and content; custom fonts;
+viewport selection, move/rotate/scale gizmos and entity attachment; blend modes and effects; presets, packs and
+relinking; translatable UI.
+
+## Translating
+
+UI text is in `src/client/resources/assets/billboards/lang/en_us.json`. Copy it to your language's file (e.g.
+`de_de.json`) and translate the values; keep `%s` placeholders. Developers: UI text is written in English in the code
+as `Lang.tr("...")`; after changing it, run `python3 scripts/update_lang.py` to regenerate `en_us.json`.
 
 ## Building
 
@@ -75,7 +92,8 @@ move/rotate/scale gizmos and entity attachment. Blend modes, effects and presets
 ./gradlew runClientGameTest   # records a replay with Flashback, opens it, adds overlays with keyframes and checks
                               # interpolation, screenshots at several ticks, saving/loading of keyframes, viewport
                               # picking, gizmo maths, entity attachment, a lower third (group + shape + TTF text)
-                              # sliding in, and a GIF, APNG and video playing in sync; with xdotool installed it also
+                              # sliding in, a GIF, APNG and video playing in sync, blend modes and effects against exact
+                              # colours, presets and packs, and the language file; with xdotool installed it also
                               # clicks and
                               # drags gizmos with the real mouse and saves full-window screenshots
 ./gradlew runExportCheck      # then: opens that replay and runs two real Flashback exports (a PNG sequence like a

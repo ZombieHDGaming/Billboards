@@ -1,5 +1,6 @@
 package me.zhdg.billboards.keyframe;
 
+import me.zhdg.billboards.Lang;
 import com.moulberry.flashback.keyframe.Keyframe;
 import com.moulberry.flashback.keyframe.interpolation.InterpolationType;
 import com.moulberry.flashback.state.EditorScene;
@@ -64,7 +65,7 @@ public final class TrackEditor {
 				scene.push(new EditorSceneHistoryEntry(
 					List.of(new EditorSceneHistoryAction.RemoveTrack(type, index)),
 					List.of(new EditorSceneHistoryAction.AddTrack(type, index)),
-					"Created " + type.name() + " track"));
+					Lang.tr("Created %s track", type.name())));
 				KeyframeTrack track = scene.keyframeTracks.get(index);
 				track.customName = trackName(element, channel);
 			}
@@ -90,7 +91,7 @@ public final class TrackEditor {
 			scene.push(new EditorSceneHistoryEntry(
 				List.of(new EditorSceneHistoryAction.SetKeyframe(type, index, tick, existing.copy())),
 				List.of(new EditorSceneHistoryAction.RemoveKeyframe(type, index, tick)),
-				"Removed " + type.name() + " keyframe"));
+				Lang.tr("Removed %s keyframe", type.name())));
 			return true;
 		});
 	}
@@ -113,7 +114,7 @@ public final class TrackEditor {
 				}
 			}
 			if (!redo.isEmpty()) {
-				scene.push(new EditorSceneHistoryEntry(undo, redo, "Removed Billboards tracks"));
+				scene.push(new EditorSceneHistoryEntry(undo, redo, Lang.tr("Removed Billboards tracks")));
 			}
 			return true;
 		});
@@ -141,7 +142,7 @@ public final class TrackEditor {
 			if (redo.isEmpty()) {
 				return false;
 			}
-			scene.push(new EditorSceneHistoryEntry(undo, redo, "Duplicated Billboards tracks"));
+			scene.push(new EditorSceneHistoryEntry(undo, redo, Lang.tr("Duplicated Billboards tracks")));
 			for (KeyframeTrack track : scene.keyframeTracks) {
 				if (track.keyframeType instanceof BillboardKeyframeTypes.Type type && to.id.equals(KeyframeEvaluator.elementOf(track))) {
 					track.customName = trackName(to, type.channel);
@@ -215,7 +216,7 @@ public final class TrackEditor {
 				}
 				redo.add(new EditorSceneHistoryAction.SetKeyframe(type, index, data.tick(), new ChannelKeyframe(element.id, data.values().copy(), interpolation)));
 			}
-			scene.push(new EditorSceneHistoryEntry(undo, redo, "Added " + type.name() + " keyframes"));
+			scene.push(new EditorSceneHistoryEntry(undo, redo, Lang.tr("Added %s keyframes", type.name())));
 			scene.keyframeTracks.get(index).customName = trackName(element, channel);
 			return true;
 		});
@@ -234,7 +235,7 @@ public final class TrackEditor {
 	}
 
 	public static String trackName(Element element, Channel channel) {
-		return element.name + " · " + channel.displayName;
+		return element.name + " · " + Lang.tr(channel.displayName);
 	}
 
 	private static int findTrack(EditorScene scene, UUID elementId, Channel channel) {

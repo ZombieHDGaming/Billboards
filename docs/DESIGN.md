@@ -10,7 +10,7 @@ Overlays render straight into Flashback's export, so they need no video editing 
 | Package | `me.zhdg.billboards` |
 | Target | Minecraft 26.3, Fabric, Flashback 0.43.x (built against 0.43.6) |
 | Java | 25 |
-| Status | Approved. Milestones 1-4 implemented. |
+| Status | Approved. All milestones (1-5) implemented. |
 
 ---
 
@@ -217,9 +217,15 @@ fades pop. Depth-tested overlays test against the world but don't write depth, s
 
 ### Blend modes & effects
 
-- Blend modes are separate `RenderPipeline`s (normal, additive, multiply, screen).
-- Effects (shadow, outline, glow, blur) render the element to an offscreen target and then composite it with a shader
-  pass.
+- **Blend modes (M5)** are separate `RenderPipeline`s (normal, additive, multiply, screen), created on first use per
+  combination of depth testing, shader variant and blend mode. The non-normal modes make the shader output
+  premultiplied colour and leave destination alpha alone.
+- **Effects (M5)** are drawn without offscreen targets (which would need the world's depth buffer copied to keep
+  depth testing): drop shadow, outline and glow draw the element again as a tinted silhouette (`SILHOUETTE` shader
+  variant), offset around rings of 12 taps. Each soft-shadow tap's alpha is chosen so the overlapping taps add up to
+  the shadow's strength. The shadow's offset is applied in screen/view space so it stays down-right whatever the
+  element's rotation. Blur (images and videos) is a 7×7 gaussian in texture space (`BLUR` variant) on a quad grown by
+  the radius, with the radius passed per draw in the texture matrix.
 - **Groups (implemented in M3):** a per-frame `SceneFrame` resolves the hierarchy. A child's model matrix is its
   group's times its own (camera-facing children are placed by the group but face the camera), and the group's
   opacity, tint and visibility multiply into each child. Overlapping children of a half-transparent group therefore

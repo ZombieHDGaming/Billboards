@@ -4,6 +4,7 @@ import com.moulberry.flashback.editor.ui.ImGuiHelper;
 import imgui.moulberry90.ImGui;
 import imgui.moulberry90.type.ImDouble;
 import imgui.moulberry90.type.ImString;
+import me.zhdg.billboards.Lang;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Space;
@@ -48,7 +49,7 @@ public final class ChannelEditor {
 				}
 			}
 			float[] rotation = {values.getFloat(Channel.PITCH), values.getFloat(Channel.YAW), values.getFloat(Channel.ROLL)};
-			if (ImGui.dragFloat3("Rotation (pitch, yaw, roll)##rotation", rotation, 0.5f, -100000f, 100000f, "%.1f°")) {
+			if (ImGui.dragFloat3(Lang.tr("Rotation (pitch, yaw, roll)##rotation"), rotation, 0.5f, -100000f, 100000f, "%.1f°")) {
 				set.set(Channel.PITCH, rotation[0]);
 				set.set(Channel.YAW, rotation[1]);
 				set.set(Channel.ROLL, rotation[2]);
@@ -56,19 +57,19 @@ public final class ChannelEditor {
 			}
 		} else {
 			float[] position = {values.getFloat(Channel.X), values.getFloat(Channel.Y)};
-			if (ImGui.dragFloat2("Position (0-1 of frame)##screen_pos", position, 0.002f, -2f, 3f, "%.3f")) {
+			if (ImGui.dragFloat2(Lang.tr("Position (0-1 of frame)##screen_pos"), position, 0.002f, -2f, 3f, "%.3f")) {
 				set.set(Channel.X, position[0]);
 				set.set(Channel.Y, position[1]);
 				changed = true;
 			}
 			float[] roll = {values.getFloat(Channel.ROLL)};
-			if (ImGui.dragFloat("Rotation##screen_roll", roll, 0.5f, -100000f, 100000f, "%.1f°")) {
+			if (ImGui.dragFloat(Lang.tr("Rotation##screen_roll"), roll, 0.5f, -100000f, 100000f, "%.1f°")) {
 				set.set(Channel.ROLL, roll[0]);
 				changed = true;
 			}
 		}
 		float[] scale = {values.getFloat(Channel.SCALE_X), values.getFloat(Channel.SCALE_Y)};
-		if (ImGui.dragFloat2("Scale (x, y)##scale", scale, 0.01f, -100f, 100f, "%.3f")) {
+		if (ImGui.dragFloat2(Lang.tr("Scale (x, y)##scale"), scale, 0.01f, -100f, 100f, "%.3f")) {
 			set.set(Channel.SCALE_X, scale[0]);
 			set.set(Channel.SCALE_Y, scale[1]);
 			changed = true;
@@ -80,17 +81,17 @@ public final class ChannelEditor {
 	private static boolean appearance(ChannelValues values, ComponentSetter set) {
 		boolean changed = false;
 		ImGui.pushItemWidth(220);
-		if (ImGui.checkbox("Visible##visible", values.get(Channel.VISIBLE) >= 0.5)) {
+		if (ImGui.checkbox(Lang.tr("Visible##visible"), values.get(Channel.VISIBLE) >= 0.5)) {
 			set.set(Channel.VISIBLE, values.get(Channel.VISIBLE) >= 0.5 ? 0 : 1);
 			changed = true;
 		}
 		float[] opacity = {values.getFloat(Channel.OPACITY)};
-		if (ImGui.sliderFloat("Opacity##opacity", opacity, 0f, 1f, "%.2f")) {
+		if (ImGui.sliderFloat(Lang.tr("Opacity##opacity"), opacity, 0f, 1f, "%.2f")) {
 			set.set(Channel.OPACITY, opacity[0]);
 			changed = true;
 		}
 		float[] color = {values.getFloat(Channel.RED), values.getFloat(Channel.GREEN), values.getFloat(Channel.BLUE)};
-		if (ImGui.colorEdit3("Tint / colour##tint", color)) {
+		if (ImGui.colorEdit3(Lang.tr("Tint / colour##tint"), color)) {
 			set.set(Channel.RED, color[0]);
 			set.set(Channel.GREEN, color[1]);
 			set.set(Channel.BLUE, color[2]);
@@ -110,31 +111,31 @@ public final class ChannelEditor {
 		if (!text.equals(textBuffer.get())) {
 			textBuffer = ImGuiHelper.createResizableImString(text);
 		}
-		if (ImGui.inputTextMultiline("Text##text", textBuffer, 220, 70)) {
+		if (ImGui.inputTextMultiline(Lang.tr("Text##text"), textBuffer, 220, 70)) {
 			setText.accept(ImGuiHelper.getString(textBuffer));
 			changed = true;
 		}
 
 		float[] reveal = {values.getFloat(Channel.REVEAL)};
-		if (ImGui.sliderFloat("Reveal##reveal", reveal, 0f, 1f, "%.2f")) {
+		if (ImGui.sliderFloat(Lang.tr("Reveal##reveal"), reveal, 0f, 1f, "%.2f")) {
 			set.set(Channel.REVEAL, reveal[0]);
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Fraction of the text shown, for typewriter-style reveals. Images ignore this.");
+		ImGuiHelper.tooltip(Lang.tr("Fraction of the text shown, for typewriter-style reveals. Images ignore this."));
 
 		float[] cropMin = {values.getFloat(Channel.CROP_LEFT), values.getFloat(Channel.CROP_TOP)};
-		if (ImGui.dragFloat2("Crop left, top##crop_min", cropMin, 0.002f, 0f, 1f, "%.3f")) {
+		if (ImGui.dragFloat2(Lang.tr("Crop left, top##crop_min"), cropMin, 0.002f, 0f, 1f, "%.3f")) {
 			set.set(Channel.CROP_LEFT, cropMin[0]);
 			set.set(Channel.CROP_TOP, cropMin[1]);
 			changed = true;
 		}
 		float[] cropMax = {values.getFloat(Channel.CROP_RIGHT), values.getFloat(Channel.CROP_BOTTOM)};
-		if (ImGui.dragFloat2("Crop right, bottom##crop_max", cropMax, 0.002f, 0f, 1f, "%.3f")) {
+		if (ImGui.dragFloat2(Lang.tr("Crop right, bottom##crop_max"), cropMax, 0.002f, 0f, 1f, "%.3f")) {
 			set.set(Channel.CROP_RIGHT, cropMax[0]);
 			set.set(Channel.CROP_BOTTOM, cropMax[1]);
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Crop is in 0-1 of the image. Text ignores this.");
+		ImGuiHelper.tooltip(Lang.tr("Crop is in 0-1 of the image. Text ignores this."));
 		ImGui.popItemWidth();
 		return changed;
 	}

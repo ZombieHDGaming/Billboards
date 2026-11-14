@@ -1,5 +1,6 @@
 package me.zhdg.billboards.keyframe;
 
+import me.zhdg.billboards.Lang;
 import com.moulberry.flashback.keyframe.KeyframeRegistry;
 import com.moulberry.flashback.keyframe.KeyframeType;
 import com.moulberry.flashback.keyframe.change.KeyframeChange;
@@ -55,7 +56,7 @@ public final class BillboardKeyframeTypes {
 
 		@Override
 		public String name() {
-			return "Billboard " + this.channel.displayName;
+			return Lang.tr("Billboard %s", Lang.tr(this.channel.displayName));
 		}
 
 		@Override

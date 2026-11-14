@@ -1,5 +1,6 @@
 package me.zhdg.billboards.mixin;
 
+import me.zhdg.billboards.Lang;
 import com.moulberry.flashback.editor.ui.windows.MainMenuBar;
 import imgui.moulberry90.ImGui;
 import me.zhdg.billboards.editor.BillboardsWindow;
@@ -15,7 +16,7 @@ public class MainMenuBarMixin {
 	@Inject(method = "renderInner", at = @At("TAIL"))
 	private static void billboards$addMenuEntry(CallbackInfo ci) {
 		ImGui.separator();
-		if (ImGui.menuItem("Billboards##BillboardsWindow", "", BillboardsWindow.isOpen())) {
+		if (ImGui.menuItem(Lang.tr("Billboards##BillboardsWindow"), "", BillboardsWindow.isOpen())) {
 			BillboardsWindow.toggle();
 		}
 	}

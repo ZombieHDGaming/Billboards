@@ -11,6 +11,7 @@ import imgui.moulberry90.flag.ImGuiCond;
 import imgui.moulberry90.flag.ImGuiTreeNodeFlags;
 import imgui.moulberry90.type.ImBoolean;
 import imgui.moulberry90.type.ImString;
+import me.zhdg.billboards.Lang;
 import me.zhdg.billboards.Billboards;
 import me.zhdg.billboards.keyframe.KeyframeEvaluator;
 import me.zhdg.billboards.keyframe.PlaybackTime;
@@ -124,7 +125,7 @@ public final class BillboardsWindow {
 		ImGui.setNextWindowPos(viewport.getPosX() + viewport.getSizeX() - width, viewport.getPosY() + 30, ImGuiCond.FirstUseEver);
 		ImGui.setNextWindowSize(width, Math.max(300, viewport.getSizeY() - 60), ImGuiCond.FirstUseEver);
 		OPEN.set(true);
-		if (ImGui.begin("Billboards###billboards", OPEN)) {
+		if (ImGui.begin(Lang.tr("Billboards###billboards"), OPEN)) {
 			try {
 				renderAddMenu(project, replayId);
 				renderFileMenus(project, replayId, editorState);
@@ -135,7 +136,7 @@ public final class BillboardsWindow {
 				ImGui.separator();
 				Element element = Selection.get(project);
 				if (element == null) {
-					ImGui.textDisabled("Select an overlay to edit it.");
+					ImGui.textDisabled(Lang.tr("Select an overlay to edit it."));
 				} else {
 					renderInspector(project, replayId, editorState, element);
 				}
@@ -150,62 +151,62 @@ public final class BillboardsWindow {
 	}
 
 	private static void renderAddMenu(BillboardProject project, UUID replayId) {
-		if (ImGui.button("Add image...")) {
+		if (ImGui.button(Lang.tr("Add image..."))) {
 			ImGui.openPopup("##billboards_add_image");
 		}
-		sameLineIfFits("Add video...");
-		if (ImGui.button("Add video...")) {
+		sameLineIfFits(Lang.tr("Add video..."));
+		if (ImGui.button(Lang.tr("Add video..."))) {
 			ImGui.openPopup("##billboards_add_video");
 		}
-		ImGuiHelper.tooltip("A video file (MP4, MOV, MKV, WebM...) that plays in sync with the replay. Animated GIFs and PNGs can be added as images.");
-		sameLineIfFits("Add text");
-		if (ImGui.button("Add text")) {
+		ImGuiHelper.tooltip(Lang.tr("A video file (MP4, MOV, MKV, WebM...) that plays in sync with the replay. Animated GIFs and PNGs can be added as images."));
+		sameLineIfFits(Lang.tr("Add text"));
+		if (ImGui.button(Lang.tr("Add text"))) {
 			ImGui.openPopup("##billboards_add_text");
 		}
-		sameLineIfFits("Add shape");
-		if (ImGui.button("Add shape")) {
+		sameLineIfFits(Lang.tr("Add shape"));
+		if (ImGui.button(Lang.tr("Add shape"))) {
 			ImGui.openPopup("##billboards_add_shape");
 		}
-		sameLineIfFits("Add group");
-		if (ImGui.button("Add group")) {
+		sameLineIfFits(Lang.tr("Add group"));
+		if (ImGui.button(Lang.tr("Add group"))) {
 			ImGui.openPopup("##billboards_add_group");
 		}
-		ImGuiHelper.tooltip("Groups move, rotate, scale and fade everything inside them together. Add things to a group by selecting it first, or with \"Move into group\" in the list.");
+		ImGuiHelper.tooltip(Lang.tr("Groups move, rotate, scale and fade everything inside them together. Add things to a group by selecting it first, or with \"Move into group\" in the list."));
 
 		if (ImGui.beginPopup("##billboards_add_image")) {
-			if (ImGui.menuItem("In the world")) {
+			if (ImGui.menuItem(Lang.tr("In the world"))) {
 				pickImage(replayId, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.IMAGE));
 			}
-			if (ImGui.menuItem("On screen")) {
+			if (ImGui.menuItem(Lang.tr("On screen"))) {
 				pickImage(replayId, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.IMAGE));
 			}
 			ImGui.endPopup();
 		}
 		if (ImGui.beginPopup("##billboards_add_video")) {
-			if (ImGui.menuItem("In the world")) {
-				pickFile(replayId, "Videos", VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.VIDEO));
+			if (ImGui.menuItem(Lang.tr("In the world"))) {
+				pickFile(replayId, Lang.tr("Videos"), VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.VIDEO));
 			}
-			if (ImGui.menuItem("On screen")) {
-				pickFile(replayId, "Videos", VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.VIDEO));
+			if (ImGui.menuItem(Lang.tr("On screen"))) {
+				pickFile(replayId, Lang.tr("Videos"), VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.VIDEO));
 			}
 			ImGui.endPopup();
 		}
 		if (ImGui.beginPopup("##billboards_add_text")) {
-			if (ImGui.menuItem("In the world")) {
+			if (ImGui.menuItem(Lang.tr("In the world"))) {
 				addText(project, Space.WORLD);
 			}
-			if (ImGui.menuItem("On screen")) {
+			if (ImGui.menuItem(Lang.tr("On screen"))) {
 				addText(project, Space.SCREEN);
 			}
 			ImGui.endPopup();
 		}
 		if (ImGui.beginPopup("##billboards_add_shape")) {
 			for (ShapeKind kind : ShapeKind.values()) {
-				if (ImGui.beginMenu(kind.displayName)) {
-					if (ImGui.menuItem("In the world")) {
+				if (ImGui.beginMenu(Lang.tr(kind.displayName))) {
+					if (ImGui.menuItem(Lang.tr("In the world"))) {
 						addShape(project, kind, Space.WORLD);
 					}
-					if (ImGui.menuItem("On screen")) {
+					if (ImGui.menuItem(Lang.tr("On screen"))) {
 						addShape(project, kind, Space.SCREEN);
 					}
 					ImGui.endMenu();
@@ -214,10 +215,10 @@ public final class BillboardsWindow {
 			ImGui.endPopup();
 		}
 		if (ImGui.beginPopup("##billboards_add_group")) {
-			if (ImGui.menuItem("In the world")) {
+			if (ImGui.menuItem(Lang.tr("In the world"))) {
 				addGroup(project, Space.WORLD);
 			}
-			if (ImGui.menuItem("On screen")) {
+			if (ImGui.menuItem(Lang.tr("On screen"))) {
 				addGroup(project, Space.SCREEN);
 			}
 			ImGui.endPopup();
@@ -225,34 +226,34 @@ public final class BillboardsWindow {
 	}
 
 	private static void renderViewportToolbar() {
-		ImGui.textDisabled("Viewport:");
+		ImGui.textDisabled(Lang.tr("Viewport:"));
 		for (ViewportTools.Tool tool : ViewportTools.Tool.values()) {
-			String label = tool.displayName + " (" + tool.key + ")";
+			String label = Lang.tr(tool.displayName) + " (" + tool.key + ")";
 			sameLineIfFits(label);
 			if (ImGui.radioButton(label, ViewportTools.tool == tool)) {
 				ViewportTools.tool = tool;
 			}
 		}
-		if (ImGui.checkbox("Local axes", ViewportTools.localAxes)) {
+		if (ImGui.checkbox(Lang.tr("Local axes"), ViewportTools.localAxes)) {
 			ViewportTools.localAxes = !ViewportTools.localAxes;
 		}
-		ImGuiHelper.tooltip("Move and rotate along the overlay's own axes instead of the world's");
+		ImGuiHelper.tooltip(Lang.tr("Move and rotate along the overlay's own axes instead of the world's"));
 		ImGui.sameLine();
-		if (ImGui.checkbox("Snap", ViewportTools.snap)) {
+		if (ImGui.checkbox(Lang.tr("Snap"), ViewportTools.snap)) {
 			ViewportTools.snap = !ViewportTools.snap;
 		}
-		ImGuiHelper.tooltip("Move in 0.25 block steps (1% of the frame on screen), rotate in 15° steps, scale in 0.1 steps");
+		ImGuiHelper.tooltip(Lang.tr("Move in 0.25 block steps (1% of the frame on screen), rotate in 15° steps, scale in 0.1 steps"));
 		ImGui.sameLine();
-		if (ImGui.checkbox("Auto-key", ViewportTools.autoKey)) {
+		if (ImGui.checkbox(Lang.tr("Auto-key"), ViewportTools.autoKey)) {
 			ViewportTools.autoKey = !ViewportTools.autoKey;
 		}
-		ImGuiHelper.tooltip("When on, editing a channel that isn't animated yet adds a keyframe at the cursor instead of changing its base value");
-		ImGui.textDisabled("Click an overlay in the viewport to select it; drag the gizmo to edit it.");
+		ImGuiHelper.tooltip(Lang.tr("When on, editing a channel that isn't animated yet adds a keyframe at the cursor instead of changing its base value"));
+		ImGui.textDisabled(Lang.tr("Click an overlay in the viewport to select it; drag the gizmo to edit it."));
 	}
 
 	private static void renderOutliner(BillboardProject project, EditorState editorState) {
 		if (project.elements.isEmpty()) {
-			ImGui.textDisabled("No overlays yet. Add an image, text, a shape or a group.");
+			ImGui.textDisabled(Lang.tr("No overlays yet. Add an image, text, a shape or a group."));
 			return;
 		}
 
@@ -280,10 +281,10 @@ public final class BillboardsWindow {
 				element.hidden = !element.hidden;
 				project.markDirty();
 			}
-			ImGuiHelper.tooltip(element.type == ElementType.GROUP ? "Show or hide this group and everything in it" : "Show or hide this overlay (also in exports)");
+			ImGuiHelper.tooltip(element.type == ElementType.GROUP ? Lang.tr("Show or hide this group and everything in it") : Lang.tr("Show or hide this overlay (also in exports)"));
 			ImGui.sameLine();
 
-			String label = (element.type == ElementType.GROUP ? "[+] " : "") + element.name + "  (" + element.type.displayName + ", " + element.space.displayName + ")";
+			String label = (element.type == ElementType.GROUP ? "[+] " : "") + element.name + "  (" + Lang.tr(element.type.displayName) + ", " + Lang.tr(element.space.displayName) + ")";
 			if (ImGui.selectable(label, Selection.is(element.id))) {
 				Selection.set(element.id);
 			}
@@ -294,24 +295,24 @@ public final class BillboardsWindow {
 			if (ImGui.beginPopupContextItem("##context")) {
 				Element previous = i > 0 ? siblings.get(i - 1) : null;
 				Element next = i < siblings.size() - 1 ? siblings.get(i + 1) : null;
-				if (ImGui.menuItem("Duplicate")) {
+				if (ImGui.menuItem(Lang.tr("Duplicate"))) {
 					action[0] = () -> Selection.set(duplicateTree(project, editorState, element, element.parentId).id);
 				}
-				if (ImGui.menuItem("Save as preset...")) {
+				if (ImGui.menuItem(Lang.tr("Save as preset..."))) {
 					presetSource = element.id;
 					presetName = ImGuiHelper.createResizableImString(element.name);
 					openPresetPopup = true;
 				}
-				if (ImGui.menuItem("Move up", "", false, previous != null)) {
+				if (ImGui.menuItem(Lang.tr("Move up"), "", false, previous != null)) {
 					action[0] = () -> swap(project, element, previous);
 				}
-				if (ImGui.menuItem("Move down", "", false, next != null)) {
+				if (ImGui.menuItem(Lang.tr("Move down"), "", false, next != null)) {
 					action[0] = () -> swap(project, element, next);
 				}
 				List<Element> groups = project.elements.stream()
 					.filter(g -> g.type == ElementType.GROUP && g.space == element.space && !project.isWithin(g, element.id) && !g.id.equals(element.parentId))
 					.toList();
-				if (ImGui.beginMenu("Move into group", !groups.isEmpty())) {
+				if (ImGui.beginMenu(Lang.tr("Move into group"), !groups.isEmpty())) {
 					for (Element group : groups) {
 						if (ImGui.menuItem(group.name + "##" + group.id)) {
 							action[0] = () -> reparent(project, editorState, element, group);
@@ -319,16 +320,16 @@ public final class BillboardsWindow {
 					}
 					ImGui.endMenu();
 				}
-				if (element.parentId != null && ImGui.menuItem("Move out of group")) {
+				if (element.parentId != null && ImGui.menuItem(Lang.tr("Move out of group"))) {
 					Element group = project.get(element.parentId);
 					Element outer = group == null || group.parentId == null ? null : project.get(group.parentId);
 					action[0] = () -> reparent(project, editorState, element, outer);
 				}
-				if (element.type == ElementType.GROUP && ImGui.menuItem("Ungroup")) {
+				if (element.type == ElementType.GROUP && ImGui.menuItem(Lang.tr("Ungroup"))) {
 					action[0] = () -> ungroup(project, editorState, element);
 				}
 				ImGui.separator();
-				if (ImGui.menuItem(element.type == ElementType.GROUP ? "Delete group and contents" : "Delete")) {
+				if (ImGui.menuItem(element.type == ElementType.GROUP ? Lang.tr("Delete group and contents") : Lang.tr("Delete"))) {
 					action[0] = () -> deleteTree(project, editorState, element);
 				}
 				ImGui.endPopup();
@@ -397,7 +398,7 @@ public final class BillboardsWindow {
 		Element copy = source.copy();
 		copy.parentId = parentId;
 		if (Objects.equals(parentId, source.parentId)) {
-			copy.name = source.name + " copy";
+			copy.name = Lang.tr("%s copy", source.name);
 		}
 		int index = project.elements.indexOf(source);
 		project.elements.add(index < 0 ? project.elements.size() : index + 1, copy);
@@ -420,30 +421,30 @@ public final class BillboardsWindow {
 	}
 
 	private static void renderFileMenus(BillboardProject project, UUID replayId, EditorState editorState) {
-		if (ImGui.button("Presets")) {
+		if (ImGui.button(Lang.tr("Presets"))) {
 			ImGui.openPopup("##billboards_presets");
 		}
-		ImGuiHelper.tooltip("Reuse overlays (with their animation) in any replay. Save one by right-clicking it in the list.");
-		sameLineIfFits("Share");
-		if (ImGui.button("Share")) {
+		ImGuiHelper.tooltip(Lang.tr("Reuse overlays (with their animation) in any replay. Save one by right-clicking it in the list."));
+		sameLineIfFits(Lang.tr("Share"));
+		if (ImGui.button(Lang.tr("Share"))) {
 			ImGui.openPopup("##billboards_share");
 		}
-		ImGuiHelper.tooltip("Flashback keeps editor data outside the replay file, so to give someone a replay with its overlays, send a pack too");
+		ImGuiHelper.tooltip(Lang.tr("Flashback keeps editor data outside the replay file, so to give someone a replay with its overlays, send a pack too"));
 
 		if (ImGui.beginPopup("##billboards_presets")) {
 			List<String> presets = Bundles.presetNames();
 			if (presets.isEmpty()) {
-				ImGui.textDisabled("No presets yet. Right-click an overlay or group in the list and choose \"Save as preset...\"");
+				ImGui.textDisabled(Lang.tr("No presets yet. Right-click an overlay or group in the list and choose \"Save as preset...\""));
 			}
 			for (String name : presets) {
 				if (ImGui.beginMenu(name + "##preset_" + name)) {
-					if (ImGui.menuItem("Add at the cursor")) {
+					if (ImGui.menuItem(Lang.tr("Add at the cursor"))) {
 						insertPreset(project, replayId, editorState, name);
 					}
-					if (ImGui.menuItem("Delete preset")) {
+					if (ImGui.menuItem(Lang.tr("Delete preset"))) {
 						try {
 							Files.deleteIfExists(Bundles.presetPath(name));
-							status("Deleted preset " + name);
+							status(Lang.tr("Deleted preset %s", name));
 						} catch (Exception e) {
 							Billboards.LOGGER.error("Unable to delete preset {}", name, e);
 						}
@@ -455,7 +456,7 @@ public final class BillboardsWindow {
 		}
 
 		if (ImGui.beginPopup("##billboards_share")) {
-			if (ImGui.menuItem("Export pack...")) {
+			if (ImGui.menuItem(Lang.tr("Export pack..."))) {
 				String start = FabricLoader.getInstance().getGameDir().toString();
 				AsyncFileDialogs.saveFileDialog(start, "billboards-pack.zip", "Billboards pack", "zip").thenAccept(picked -> {
 					if (picked != null) {
@@ -463,11 +464,11 @@ public final class BillboardsWindow {
 					}
 				});
 			}
-			ImGuiHelper.tooltip("Saves every overlay in this replay, their files and their keyframes into one file");
-			if (ImGui.menuItem("Import pack...")) {
-				pickFile(replayId, "Billboards pack", new String[]{"zip"}, path -> importPack(project, replayId, editorState, path));
+			ImGuiHelper.tooltip(Lang.tr("Saves every overlay in this replay, their files and their keyframes into one file"));
+			if (ImGui.menuItem(Lang.tr("Import pack..."))) {
+				pickFile(replayId, Lang.tr("Billboards pack"), new String[]{"zip"}, path -> importPack(project, replayId, editorState, path));
 			}
-			ImGuiHelper.tooltip("Adds the overlays and keyframes from a pack to this replay");
+			ImGuiHelper.tooltip(Lang.tr("Adds the overlays and keyframes from a pack to this replay"));
 			ImGui.endPopup();
 		}
 
@@ -477,17 +478,17 @@ public final class BillboardsWindow {
 
 		// "Save as preset" name prompt.
 		if (openPresetPopup) {
-			ImGui.openPopup("Save as preset##billboards_save_preset");
+			ImGui.openPopup("Save preset###billboards_save_preset");
 			openPresetPopup = false;
 		}
-		if (ImGui.beginPopupModal("Save as preset##billboards_save_preset")) {
-			ImGui.inputText("Name", presetName);
-			if (ImGui.button("Save")) {
+		if (ImGui.beginPopupModal(Lang.tr("Save preset###billboards_save_preset"))) {
+			ImGui.inputText(Lang.tr("Name"), presetName);
+			if (ImGui.button(Lang.tr("Save"))) {
 				savePreset(project, replayId, editorState, ImGuiHelper.getString(presetName));
 				ImGui.closeCurrentPopup();
 			}
 			ImGui.sameLine();
-			if (ImGui.button("Cancel")) {
+			if (ImGui.button(Lang.tr("Cancel"))) {
 				ImGui.closeCurrentPopup();
 			}
 			ImGui.endPopup();
@@ -501,10 +502,10 @@ public final class BillboardsWindow {
 		}
 		try {
 			Bundles.write(Bundles.presetPath(name), replayId, project, editorState, List.of(source), true);
-			status("Saved preset " + name);
+			status(Lang.tr("Saved preset %s", name));
 		} catch (Exception e) {
 			Billboards.LOGGER.error("Unable to save preset {}", name, e);
-			status("Couldn't save the preset; see the log");
+			status(Lang.tr("Couldn't save the preset; see the log"));
 		}
 	}
 
@@ -520,20 +521,20 @@ public final class BillboardsWindow {
 			if (!roots.isEmpty()) {
 				Selection.set(roots.getFirst().id);
 			}
-			status("Added preset " + name);
+			status(Lang.tr("Added preset %s", name));
 		} catch (Exception e) {
 			Billboards.LOGGER.error("Unable to add preset {}", name, e);
-			status("Couldn't add the preset; see the log");
+			status(Lang.tr("Couldn't add the preset; see the log"));
 		}
 	}
 
 	private static void exportPack(BillboardProject project, UUID replayId, EditorState editorState, Path file) {
 		try {
 			Bundles.write(file, replayId, project, editorState, project.children(null), false);
-			status("Exported " + project.elements.size() + " overlays to " + file.getFileName());
+			status(Lang.tr("Exported %s overlays to %s", project.elements.size(), file.getFileName()));
 		} catch (Exception e) {
 			Billboards.LOGGER.error("Unable to export pack", e);
-			status("Couldn't export the pack; see the log");
+			status(Lang.tr("Couldn't export the pack; see the log"));
 		}
 	}
 
@@ -541,7 +542,7 @@ public final class BillboardsWindow {
 		try {
 			Bundles.Bundle bundle = Bundles.read(file);
 			Bundles.insert(file, bundle, replayId, project, editorState, 0, null);
-			status("Imported " + bundle.elements().size() + " overlays from " + file.getFileName());
+			status(Lang.tr("Imported %s overlays from %s", bundle.elements().size(), file.getFileName()));
 		} catch (Exception e) {
 			Billboards.LOGGER.error("Unable to import pack {}", file, e);
 			status("Couldn't import the pack; see the log");
@@ -561,14 +562,14 @@ public final class BillboardsWindow {
 		if (missing.isEmpty()) {
 			return;
 		}
-		ImGui.textColored(0xFF5555FF, missing.size() == 1 ? "1 file is missing" : missing.size() + " files are missing");
-		ImGuiHelper.tooltip("Shown as a magenta checkerboard. Select the overlay and use Relink, or relink here.");
+		ImGui.textColored(0xFF5555FF, missing.size() == 1 ? Lang.tr("1 file is missing") : Lang.tr("%s files are missing", missing.size()));
+		ImGuiHelper.tooltip(Lang.tr("Shown as a magenta checkerboard. Select the overlay and use Relink, or relink here."));
 		for (String assetId : missing) {
 			ImGui.pushID(assetId);
 			ImGui.bulletText(project.assets.getOrDefault(assetId, assetId));
 			ImGui.sameLine();
-			if (ImGui.smallButton("Relink...")) {
-				pickFile(replayId, "Files", new String[]{"png", "jpg", "jpeg", "gif", "bmp", "mp4", "mov", "mkv", "webm", "avi", "m4v", "ttf", "otf"},
+			if (ImGui.smallButton(Lang.tr("Relink..."))) {
+				pickFile(replayId, Lang.tr("Files"), new String[]{"png", "jpg", "jpeg", "gif", "bmp", "mp4", "mov", "mkv", "webm", "avi", "m4v", "ttf", "otf"},
 					path -> relink(project, replayId, assetId, path));
 			}
 			ImGui.popID();
@@ -591,10 +592,10 @@ public final class BillboardsWindow {
 			MediaPlayers.retry(newAssetId);
 			CustomFont.retry(newAssetId);
 			project.markDirty();
-			status("Relinked " + path.getFileName());
+			status(Lang.tr("Relinked %s", path.getFileName()));
 		} catch (Exception e) {
 			Billboards.LOGGER.error("Unable to relink {}", path, e);
-			status("Couldn't relink; see the log");
+			status(Lang.tr("Couldn't relink; see the log"));
 		}
 	}
 
@@ -610,7 +611,7 @@ public final class BillboardsWindow {
 			nameBufferOwner = element.id;
 			nameBuffer = ImGuiHelper.createResizableImString(element.name);
 		}
-		if (ImGui.inputText("Name", nameBuffer)) {
+		if (ImGui.inputText(Lang.tr("Name"), nameBuffer)) {
 			element.name = ImGuiHelper.getString(nameBuffer);
 			project.markDirty();
 		}
@@ -618,12 +619,12 @@ public final class BillboardsWindow {
 			TrackEditor.renameTracks(editorState, element);
 		}
 
-		if (ImGui.collapsingHeader("Settings", ImGuiTreeNodeFlags.DefaultOpen)) {
+		if (ImGui.collapsingHeader(Lang.tr("Settings"), ImGuiTreeNodeFlags.DefaultOpen)) {
 			if (renderSettings(project, replayId, element)) {
 				project.markDirty();
 			}
 		}
-		if (element.type != ElementType.GROUP && ImGui.collapsingHeader("Look")) {
+		if (element.type != ElementType.GROUP && ImGui.collapsingHeader(Lang.tr("Look"))) {
 			if (renderLookSettings(element)) {
 				project.markDirty();
 			}
@@ -646,16 +647,16 @@ public final class BillboardsWindow {
 		boolean changed = false;
 
 		if (element.space == Space.WORLD) {
-			Facing facing = enumCombo("Facing", element.facing, Facing.values(), f -> f.displayName);
+			Facing facing = enumCombo(Lang.tr("Facing"), element.facing, Facing.values(), f -> f.displayName);
 			if (facing != element.facing) {
 				element.facing = facing;
 				changed = true;
 			}
-			if (ImGui.checkbox("Hidden behind blocks", element.depthTest)) {
+			if (ImGui.checkbox(Lang.tr("Hidden behind blocks"), element.depthTest)) {
 				element.depthTest = !element.depthTest;
 				changed = true;
 			}
-			ImGuiHelper.tooltip("When off, the overlay is always drawn on top of the world");
+			ImGuiHelper.tooltip(Lang.tr("When off, the overlay is always drawn on top of the world"));
 			if (element.parentId == null && renderAttachment(element)) {
 				changed = true;
 			}
@@ -663,58 +664,58 @@ public final class BillboardsWindow {
 
 		if (element.type != ElementType.GROUP) {
 			float[] pivot = {element.pivotX, element.pivotY};
-			if (ImGui.dragFloat2("Pivot (0-1)", pivot, 0.005f, 0f, 1f, "%.3f")) {
+			if (ImGui.dragFloat2(Lang.tr("Pivot (0-1)"), pivot, 0.005f, 0f, 1f, "%.3f")) {
 				element.pivotX = pivot[0];
 				element.pivotY = pivot[1];
 				changed = true;
 			}
-			ImGuiHelper.tooltip("The point of the overlay that sits on its position and that it rotates around. 0.5, 0.5 is the centre");
+			ImGuiHelper.tooltip(Lang.tr("The point of the overlay that sits on its position and that it rotates around. 0.5, 0.5 is the centre"));
 		} else {
-			ImGui.textDisabled("Position, rotation, scale, opacity and tint apply to everything in the group.");
+			ImGui.textDisabled(Lang.tr("Position, rotation, scale, opacity and tint apply to everything in the group."));
 		}
 
 		if (element.parentId == null) {
 			int[] layer = {element.layer};
-			if (ImGuiHelper.inputInt("Layer", layer)) {
+			if (ImGuiHelper.inputInt(Lang.tr("Layer"), layer)) {
 				element.layer = layer[0];
 				changed = true;
 			}
 			ImGuiHelper.tooltip(element.space == Space.SCREEN
-				? "Higher layers are drawn on top (a group's contents are drawn in list order)"
-				: "Only affects overlays that are not hidden behind blocks; the rest are sorted by distance");
+				? Lang.tr("Higher layers are drawn on top (a group's contents are drawn in list order)")
+				: Lang.tr("Only affects overlays that are not hidden behind blocks; the rest are sorted by distance"));
 		} else {
-			ImGui.textDisabled("Inside a group: position is relative to the group.");
+			ImGui.textDisabled(Lang.tr("Inside a group: position is relative to the group."));
 		}
 
-		String unit = element.space == Space.WORLD ? "blocks" : "of frame height";
+		String unit = element.space == Space.WORLD ? Lang.tr("blocks") : Lang.tr("of frame height");
 		if (element.type.isPicture()) {
 			boolean video = element.type == ElementType.VIDEO;
 			String fileName = element.assetId == null ? "(none)" : project.assets.getOrDefault(element.assetId, element.assetId);
-			ImGui.text((video ? "Video: " : "Image: ") + fileName);
+			ImGui.text(video ? Lang.tr("Video: %s", fileName) : Lang.tr("Image: %s", fileName));
 			if (element.assetId != null && !AssetStore.exists(replayId, element.assetId)) {
-				ImGui.textColored(0xFF5555FF, "File missing");
+				ImGui.textColored(0xFF5555FF, Lang.tr("File missing"));
 				ImGui.sameLine();
-				if (ImGui.smallButton("Relink...")) {
+				if (ImGui.smallButton(Lang.tr("Relink..."))) {
 					String old = element.assetId;
-					pickFile(replayId, video ? "Videos" : "Images", video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS, path -> relink(project, replayId, old, path));
+					pickFile(replayId, video ? Lang.tr("Videos") : Lang.tr("Images"), video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS, path -> relink(project, replayId, old, path));
 				}
 			}
 			ImGui.sameLine();
-			if (ImGui.smallButton("Replace...")) {
-				pickFile(replayId, video ? "Videos" : "Images", video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS,
+			if (ImGui.smallButton(Lang.tr("Replace..."))) {
+				pickFile(replayId, video ? Lang.tr("Videos") : Lang.tr("Images"), video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS,
 					path -> replaceImage(project, replayId, element, path));
 			}
 			float[] size = {element.width, element.height};
-			if (ImGui.dragFloat2("Size (" + unit + ")", size, 0.01f, 0.001f, 10000f, "%.3f")) {
+			if (ImGui.dragFloat2(Lang.tr("Size (%s)", unit), size, 0.01f, 0.001f, 10000f, "%.3f")) {
 				element.width = size[0];
 				element.height = size[1];
 				changed = true;
 			}
-			if (ImGui.checkbox("Pixelated", element.pixelated)) {
+			if (ImGui.checkbox(Lang.tr("Pixelated"), element.pixelated)) {
 				element.pixelated = !element.pixelated;
 				changed = true;
 			}
-			ImGuiHelper.tooltip("Use nearest-neighbour filtering, for pixel art");
+			ImGuiHelper.tooltip(Lang.tr("Use nearest-neighbour filtering, for pixel art"));
 			if (MediaPlayers.isPlayed(replayId, element)) {
 				changed |= renderPlaybackSettings(replayId, element);
 			}
@@ -722,43 +723,43 @@ public final class BillboardsWindow {
 			changed |= renderShapeSettings(element, unit);
 		} else if (element.type == ElementType.TEXT) {
 			String fontName = element.fontAssetId == null ? "Minecraft" : project.assets.getOrDefault(element.fontAssetId, element.fontAssetId);
-			ImGui.text("Font: " + fontName);
+			ImGui.text(Lang.tr("Font: %s", fontName));
 			if (element.fontAssetId != null && !AssetStore.exists(replayId, element.fontAssetId)) {
-				ImGui.textColored(0xFF5555FF, "Font file missing (using Minecraft's font)");
+				ImGui.textColored(0xFF5555FF, Lang.tr("Font file missing (using Minecraft's font)"));
 				ImGui.sameLine();
-				if (ImGui.smallButton("Relink...##font")) {
+				if (ImGui.smallButton(Lang.tr("Relink...##font"))) {
 					String old = element.fontAssetId;
-					pickFile(replayId, "Fonts", FONT_EXTENSIONS, path -> relink(project, replayId, old, path));
+					pickFile(replayId, Lang.tr("Fonts"), FONT_EXTENSIONS, path -> relink(project, replayId, old, path));
 				}
 			}
 			ImGui.sameLine();
-			if (ImGui.smallButton("Choose...")) {
-				pickFile(replayId, "Fonts", FONT_EXTENSIONS, path -> setFont(project, replayId, element, path));
+			if (ImGui.smallButton(Lang.tr("Choose..."))) {
+				pickFile(replayId, Lang.tr("Fonts"), FONT_EXTENSIONS, path -> setFont(project, replayId, element, path));
 			}
-			ImGuiHelper.tooltip("Use a TTF or OTF font file instead of Minecraft's font");
+			ImGuiHelper.tooltip(Lang.tr("Use a TTF or OTF font file instead of Minecraft's font"));
 			if (element.fontAssetId != null) {
 				ImGui.sameLine();
-				if (ImGui.smallButton("Minecraft font")) {
+				if (ImGui.smallButton(Lang.tr("Minecraft font"))) {
 					element.fontAssetId = null;
 					changed = true;
 				}
 			}
 			float[] fontSize = {element.fontSize};
-			if (ImGui.dragFloat("Line height (" + unit + ")", fontSize, 0.002f, 0.001f, 1000f, "%.3f")) {
+			if (ImGui.dragFloat(Lang.tr("Line height (%s)", unit), fontSize, 0.002f, 0.001f, 1000f, "%.3f")) {
 				element.fontSize = fontSize[0];
 				changed = true;
 			}
-			TextAlign align = enumCombo("Align", element.align, TextAlign.values(), a -> a.displayName);
+			TextAlign align = enumCombo(Lang.tr("Align"), element.align, TextAlign.values(), a -> a.displayName);
 			if (align != element.align) {
 				element.align = align;
 				changed = true;
 			}
-			if (ImGui.checkbox("Shadow", element.textShadow)) {
+			if (ImGui.checkbox(Lang.tr("Shadow"), element.textShadow)) {
 				element.textShadow = !element.textShadow;
 				changed = true;
 			}
 			float[] background = argbToFloats(element.backgroundColor);
-			if (ImGui.colorEdit4("Background", background)) {
+			if (ImGui.colorEdit4(Lang.tr("Background"), background)) {
 				element.backgroundColor = floatsToArgb(background);
 				changed = true;
 			}
@@ -775,21 +776,21 @@ public final class BillboardsWindow {
 			&& TrackEditor.keyState(editorState, element.id, Channel.TRANSFORM, tick) != TrackEditor.KeyState.NOT_ANIMATED;
 
 		if (element.attachEntity == null) {
-			if (ImGui.button("Attach to entity...")) {
+			if (ImGui.button(Lang.tr("Attach to entity..."))) {
 				ImGui.openPopup("##billboards_attach");
 			}
 			ImGuiHelper.tooltip(positionAnimated
-				? "Follow an entity. Position keyframes will then be offsets from the entity."
-				: "Follow an entity, e.g. to pin a label above a player's head. The position becomes an offset from the entity.");
+				? Lang.tr("Follow an entity. Position keyframes will then be offsets from the entity.")
+				: Lang.tr("Follow an entity, e.g. to pin a label above a player's head. The position becomes an offset from the entity."));
 			if (ImGui.beginPopup("##billboards_attach")) {
 				List<Entity> candidates = attachCandidates();
 				if (candidates.isEmpty()) {
-					ImGui.textDisabled("No entities nearby");
+					ImGui.textDisabled(Lang.tr("No entities nearby"));
 				}
 				Vec3 eye = Minecraft.getInstance().gameRenderer.mainCamera().position();
 				for (Entity entity : candidates) {
-					String label = entity.getName().getString() + "  (" + entity.getType().getDescription().getString() + ", "
-						+ Math.round(entity.position().distanceTo(eye)) + " blocks)##" + entity.getUUID();
+					String label = Lang.tr("%s  (%s, %s blocks)", entity.getName().getString(), entity.getType().getDescription().getString(),
+						Math.round(entity.position().distanceTo(eye))) + "##" + entity.getUUID();
 					if (ImGui.selectable(label)) {
 						element.attachEntity = entity.getUUID();
 						element.attachEntityName = entity.getName().getString();
@@ -810,9 +811,9 @@ public final class BillboardsWindow {
 
 		Entity entity = ElementGeometry.attachedEntity(element);
 		String name = entity != null ? entity.getName().getString() : (element.attachEntityName == null ? "?" : element.attachEntityName);
-		ImGui.text("Attached to " + name + (entity == null ? " (not loaded at this tick)" : ""));
+		ImGui.text(Lang.tr("Attached to %s", name) + (entity == null ? " " + Lang.tr("(not loaded at this tick)") : ""));
 		ImGui.sameLine();
-		if (ImGui.smallButton("Detach")) {
+		if (ImGui.smallButton(Lang.tr("Detach"))) {
 			if (entity != null && !positionAnimated) {
 				// Keep the overlay where it is now.
 				Vec3 world = ElementGeometry.worldPosition(element, element.transform);
@@ -827,20 +828,20 @@ public final class BillboardsWindow {
 			return true;
 		}
 		ImGuiHelper.tooltip(positionAnimated
-			? "Position keyframes stay as they are and become world coordinates again"
-			: "Stop following the entity, leaving the overlay where it is now");
+			? Lang.tr("Position keyframes stay as they are and become world coordinates again")
+			: Lang.tr("Stop following the entity, leaving the overlay where it is now"));
 
-		AttachAnchor anchor = enumCombo("Anchor", element.attachAnchor, AttachAnchor.values(), a -> a.displayName);
+		AttachAnchor anchor = enumCombo(Lang.tr("Anchor"), element.attachAnchor, AttachAnchor.values(), a -> a.displayName);
 		if (anchor != element.attachAnchor) {
 			element.attachAnchor = anchor;
 			changed = true;
 		}
-		if (ImGui.checkbox("Turn with entity", element.attachRotate)) {
+		if (ImGui.checkbox(Lang.tr("Turn with entity"), element.attachRotate)) {
 			element.attachRotate = !element.attachRotate;
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Rotate the offset (and a fixed-facing overlay) with the entity's body");
-		ImGui.textDisabled("Position is an offset from the anchor while attached.");
+		ImGuiHelper.tooltip(Lang.tr("Rotate the offset (and a fixed-facing overlay) with the entity's body"));
+		ImGui.textDisabled(Lang.tr("Position is an offset from the anchor while attached."));
 		return changed;
 	}
 
@@ -864,7 +865,7 @@ public final class BillboardsWindow {
 
 	private static void renderChannel(BillboardProject project, EditorState editorState, Element element, Channel channel,
 	                                  KeyframeEvaluator.Frame frame, int tick) {
-		if (!ImGui.collapsingHeader(channel.displayName, ImGuiTreeNodeFlags.DefaultOpen)) {
+		if (!ImGui.collapsingHeader(Lang.tr(channel.displayName) + "##" + channel.id(), ImGuiTreeNodeFlags.DefaultOpen)) {
 			return;
 		}
 		ImGui.pushID(channel.id());
@@ -872,28 +873,28 @@ public final class BillboardsWindow {
 		TrackEditor.KeyState state = tick < 0 ? TrackEditor.KeyState.NOT_ANIMATED : TrackEditor.keyState(editorState, element.id, channel, tick);
 		switch (state) {
 			case NOT_ANIMATED -> {
-				if (ImGui.smallButton("Animate")) {
+				if (ImGui.smallButton(Lang.tr("Animate"))) {
 					TrackEditor.setKeyframe(editorState, element, element.base(channel), tick);
 				}
-				ImGuiHelper.tooltip("Add a keyframe at the cursor (tick " + tick + ") and show this channel on the timeline");
+				ImGuiHelper.tooltip(Lang.tr("Add a keyframe at the cursor (tick %s) and show this channel on the timeline", tick));
 				ImGui.sameLine();
 				ImGui.textDisabled(ViewportTools.autoKey
-					? "Not animated: auto-key adds a keyframe at tick " + tick
-					: "Not animated: edits change the base value");
+					? Lang.tr("Not animated: auto-key adds a keyframe at tick %s", tick)
+					: Lang.tr("Not animated: edits change the base value"));
 			}
 			case ANIMATED -> {
-				if (ImGui.smallButton("Add keyframe")) {
+				if (ImGui.smallButton(Lang.tr("Add keyframe"))) {
 					TrackEditor.setKeyframe(editorState, element, OverlayRenderer.valuesOf(frame, element, channel), tick);
 				}
 				ImGui.sameLine();
-				ImGui.textDisabled("Animated: edits add a keyframe at tick " + tick);
+				ImGui.textDisabled(Lang.tr("Animated: edits add a keyframe at tick %s", tick));
 			}
 			case ON_KEYFRAME -> {
-				if (ImGui.smallButton("Remove keyframe")) {
+				if (ImGui.smallButton(Lang.tr("Remove keyframe"))) {
 					TrackEditor.removeKeyframe(editorState, element.id, channel, tick);
 				}
 				ImGui.sameLine();
-				ImGui.textDisabled("Editing the keyframe at tick " + tick);
+				ImGui.textDisabled(Lang.tr("Editing the keyframe at tick %s", tick));
 			}
 		}
 
@@ -917,60 +918,60 @@ public final class BillboardsWindow {
 			MediaPlayer.Info info = player.info();
 			ImGui.textDisabled(String.format(java.util.Locale.ROOT, "%dx%d, %.2f s at %.1f fps", info.width(), info.height(), info.durationSeconds(), info.frameRate()));
 		} else {
-			ImGui.textDisabled("Can't be played; see the log");
+			ImGui.textDisabled(Lang.tr("Can't be played; see the log"));
 		}
 		int[] start = {element.mediaStartTick};
-		if (ImGuiHelper.inputInt("Starts at tick", start)) {
+		if (ImGuiHelper.inputInt(Lang.tr("Starts at tick"), start)) {
 			element.mediaStartTick = Math.max(0, start[0]);
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Replay tick at which it starts playing; before that it shows its first frame");
+		ImGuiHelper.tooltip(Lang.tr("Replay tick at which it starts playing; before that it shows its first frame"));
 		ImGui.sameLine();
-		if (ImGui.smallButton("Cursor")) {
+		if (ImGui.smallButton(Lang.tr("Cursor"))) {
 			element.mediaStartTick = Math.max(0, PlaybackTime.cursorTick());
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Start playing at the timeline cursor");
+		ImGuiHelper.tooltip(Lang.tr("Start playing at the timeline cursor"));
 		float[] speed = {element.mediaSpeed};
-		if (ImGui.dragFloat("Speed", speed, 0.01f, 0.01f, 100f, "%.2fx")) {
+		if (ImGui.dragFloat(Lang.tr("Speed"), speed, 0.01f, 0.01f, 100f, "%.2fx")) {
 			element.mediaSpeed = Math.max(0.01f, speed[0]);
 			changed = true;
 		}
-		if (ImGui.checkbox("Loop", element.mediaLoop)) {
+		if (ImGui.checkbox(Lang.tr("Loop"), element.mediaLoop)) {
 			element.mediaLoop = !element.mediaLoop;
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Start again after the end instead of holding the last frame");
+		ImGuiHelper.tooltip(Lang.tr("Start again after the end instead of holding the last frame"));
 		return changed;
 	}
 
 	/** Blend mode and effects. Returns true if anything changed. */
 	private static boolean renderLookSettings(Element element) {
 		boolean changed = false;
-		String unit = element.space == Space.WORLD ? "blocks" : "of frame height";
-		BlendMode blend = enumCombo("Blend", element.blend, BlendMode.values(), b -> b.displayName);
+		String unit = element.space == Space.WORLD ? Lang.tr("blocks") : Lang.tr("of frame height");
+		BlendMode blend = enumCombo(Lang.tr("Blend"), element.blend, BlendMode.values(), b -> b.displayName);
 		if (blend != element.blend) {
 			element.blend = blend;
 			changed = true;
 		}
-		ImGuiHelper.tooltip("Additive adds light (glows, beams); multiply darkens; screen lightens");
+		ImGuiHelper.tooltip(Lang.tr("Additive adds light (glows, beams); multiply darkens; screen lightens"));
 
 		Effects effects = element.effects;
 		ImGui.pushID("shadow");
-		if (ImGui.checkbox("Drop shadow", effects.shadow)) {
+		if (ImGui.checkbox(Lang.tr("Drop shadow"), effects.shadow)) {
 			effects.shadow = !effects.shadow;
 			changed = true;
 		}
 		if (effects.shadow) {
-			changed |= colour("Colour", effects.shadowColor, c -> effects.shadowColor = c);
+			changed |= colour(Lang.tr("Colour"), effects.shadowColor, c -> effects.shadowColor = c);
 			float[] offset = {effects.shadowOffsetX, effects.shadowOffsetY};
-			if (ImGui.dragFloat2("Offset right, down (" + unit + ")", offset, 0.0005f, -100f, 100f, "%.4f")) {
+			if (ImGui.dragFloat2(Lang.tr("Offset right, down (%s)", unit), offset, 0.0005f, -100f, 100f, "%.4f")) {
 				effects.shadowOffsetX = offset[0];
 				effects.shadowOffsetY = offset[1];
 				changed = true;
 			}
 			float[] softness = {effects.shadowSoftness};
-			if (ImGui.dragFloat("Softness (" + unit + ")", softness, 0.0005f, 0f, 100f, "%.4f")) {
+			if (ImGui.dragFloat(Lang.tr("Softness (%s)", unit), softness, 0.0005f, 0f, 100f, "%.4f")) {
 				effects.shadowSoftness = Math.max(0, softness[0]);
 				changed = true;
 			}
@@ -978,14 +979,14 @@ public final class BillboardsWindow {
 		ImGui.popID();
 
 		ImGui.pushID("outline");
-		if (ImGui.checkbox("Outline", effects.outline)) {
+		if (ImGui.checkbox(Lang.tr("Outline"), effects.outline)) {
 			effects.outline = !effects.outline;
 			changed = true;
 		}
 		if (effects.outline) {
-			changed |= colour("Colour", effects.outlineColor, c -> effects.outlineColor = c);
+			changed |= colour(Lang.tr("Colour"), effects.outlineColor, c -> effects.outlineColor = c);
 			float[] width = {effects.outlineWidth};
-			if (ImGui.dragFloat("Width (" + unit + ")", width, 0.0005f, 0f, 100f, "%.4f")) {
+			if (ImGui.dragFloat(Lang.tr("Width (%s)", unit), width, 0.0005f, 0f, 100f, "%.4f")) {
 				effects.outlineWidth = Math.max(0, width[0]);
 				changed = true;
 			}
@@ -993,14 +994,14 @@ public final class BillboardsWindow {
 		ImGui.popID();
 
 		ImGui.pushID("glow");
-		if (ImGui.checkbox("Glow", effects.glow)) {
+		if (ImGui.checkbox(Lang.tr("Glow"), effects.glow)) {
 			effects.glow = !effects.glow;
 			changed = true;
 		}
 		if (effects.glow) {
-			changed |= colour("Colour", effects.glowColor, c -> effects.glowColor = c);
+			changed |= colour(Lang.tr("Colour"), effects.glowColor, c -> effects.glowColor = c);
 			float[] radius = {effects.glowRadius};
-			if (ImGui.dragFloat("Radius (" + unit + ")", radius, 0.001f, 0f, 100f, "%.4f")) {
+			if (ImGui.dragFloat(Lang.tr("Radius (%s)", unit), radius, 0.001f, 0f, 100f, "%.4f")) {
 				effects.glowRadius = Math.max(0, radius[0]);
 				changed = true;
 			}
@@ -1009,11 +1010,11 @@ public final class BillboardsWindow {
 
 		if (element.type.isPicture()) {
 			float[] blur = {effects.blur};
-			if (ImGui.dragFloat("Blur (" + unit + ")", blur, 0.0005f, 0f, 100f, "%.4f")) {
+			if (ImGui.dragFloat(Lang.tr("Blur (%s)", unit), blur, 0.0005f, 0f, 100f, "%.4f")) {
 				effects.blur = Math.max(0, blur[0]);
 				changed = true;
 			}
-			ImGuiHelper.tooltip("Blurs the image or video; 0 for none");
+			ImGuiHelper.tooltip(Lang.tr("Blurs the image or video; 0 for none"));
 		}
 		return changed;
 	}
@@ -1029,50 +1030,50 @@ public final class BillboardsWindow {
 
 	private static boolean renderShapeSettings(Element element, String unit) {
 		boolean changed = false;
-		ShapeKind kind = enumCombo("Shape", element.shapeKind, ShapeKind.values(), k -> k.displayName);
+		ShapeKind kind = enumCombo(Lang.tr("Shape"), element.shapeKind, ShapeKind.values(), k -> k.displayName);
 		if (kind != element.shapeKind) {
 			element.shapeKind = kind;
 			changed = true;
 		}
 		float[] size = {element.width, element.height};
-		if (ImGui.dragFloat2("Size (" + unit + ")", size, 0.005f, 0.001f, 10000f, "%.3f")) {
+		if (ImGui.dragFloat2(Lang.tr("Size (%s)", unit), size, 0.005f, 0.001f, 10000f, "%.3f")) {
 			element.width = size[0];
 			element.height = size[1];
 			changed = true;
 		}
 		float[] fill = argbToFloats(element.fillColor);
-		if (ImGui.colorEdit4(element.gradient == Gradient.NONE ? "Fill" : "Fill (start)", fill)) {
+		if (ImGui.colorEdit4(element.gradient == Gradient.NONE ? Lang.tr("Fill") : Lang.tr("Fill (start)"), fill)) {
 			element.fillColor = floatsToArgb(fill);
 			changed = true;
 		}
-		Gradient gradient = enumCombo("Gradient", element.gradient, Gradient.values(), g -> g.displayName);
+		Gradient gradient = enumCombo(Lang.tr("Gradient"), element.gradient, Gradient.values(), g -> g.displayName);
 		if (gradient != element.gradient) {
 			element.gradient = gradient;
 			changed = true;
 		}
 		if (element.gradient != Gradient.NONE) {
 			float[] fill2 = argbToFloats(element.fillColor2);
-			if (ImGui.colorEdit4("Fill (end)", fill2)) {
+			if (ImGui.colorEdit4(Lang.tr("Fill (end)"), fill2)) {
 				element.fillColor2 = floatsToArgb(fill2);
 				changed = true;
 			}
 		}
 		boolean lineLike = element.shapeKind == ShapeKind.LINE || element.shapeKind == ShapeKind.ARROW;
 		float[] stroke = {element.strokeWidth};
-		if (ImGui.dragFloat(lineLike ? "Thickness (" + unit + ")" : "Outline width (" + unit + ")", stroke, 0.001f, 0f, 1000f, "%.3f")) {
+		if (ImGui.dragFloat(lineLike ? Lang.tr("Thickness (%s)", unit) : Lang.tr("Outline width (%s)", unit), stroke, 0.001f, 0f, 1000f, "%.3f")) {
 			element.strokeWidth = Math.max(0, stroke[0]);
 			changed = true;
 		}
 		if (!lineLike) {
 			float[] strokeColor = argbToFloats(element.strokeColor);
-			if (ImGui.colorEdit4("Outline", strokeColor)) {
+			if (ImGui.colorEdit4(Lang.tr("Outline"), strokeColor)) {
 				element.strokeColor = floatsToArgb(strokeColor);
 				changed = true;
 			}
 		}
 		if (element.shapeKind == ShapeKind.ROUNDED_RECTANGLE) {
 			float[] radius = {element.cornerRadius};
-			if (ImGui.dragFloat("Corner radius (" + unit + ")", radius, 0.002f, 0f, 1000f, "%.3f")) {
+			if (ImGui.dragFloat(Lang.tr("Corner radius (%s)", unit), radius, 0.002f, 0f, 1000f, "%.3f")) {
 				element.cornerRadius = Math.max(0, radius[0]);
 				changed = true;
 			}
@@ -1085,7 +1086,7 @@ public final class BillboardsWindow {
 		element.type = ElementType.SHAPE;
 		element.space = space;
 		element.shapeKind = kind;
-		element.name = kind.displayName + " " + (project.elements.size() + 1);
+		element.name = Lang.tr(kind.displayName) + " " + (project.elements.size() + 1);
 		boolean lineLike = kind == ShapeKind.LINE || kind == ShapeKind.ARROW;
 		if (space == Space.WORLD) {
 			element.width = 2;
@@ -1110,7 +1111,7 @@ public final class BillboardsWindow {
 		Element element = new Element();
 		element.type = ElementType.GROUP;
 		element.space = space;
-		element.name = "Group " + (project.elements.size() + 1);
+		element.name = Lang.tr("Group %s", project.elements.size() + 1);
 		place(element);
 		// New groups start at the top level even when another group is selected (nest them with "Move into group").
 		Selection.set(null);
@@ -1135,8 +1136,8 @@ public final class BillboardsWindow {
 		Element element = new Element();
 		element.type = ElementType.TEXT;
 		element.space = space;
-		element.name = "Text " + (project.elements.size() + 1);
-		element.content.text = "Your text here";
+		element.name = Lang.tr("Text %s", project.elements.size() + 1);
+		element.content.text = Lang.tr("Your text here");
 		element.fontSize = space == Space.WORLD ? 0.25f : 0.06f;
 		place(element);
 		add(project, element);
@@ -1227,7 +1228,7 @@ public final class BillboardsWindow {
 	}
 
 	private static void pickImage(UUID replayId, java.util.function.Consumer<Path> onPicked) {
-		pickFile(replayId, "Images", IMAGE_EXTENSIONS, onPicked);
+		pickFile(replayId, Lang.tr("Images"), IMAGE_EXTENSIONS, onPicked);
 	}
 
 	private static void pickFile(UUID replayId, String description, String[] extensions, java.util.function.Consumer<Path> onPicked) {
@@ -1281,9 +1282,9 @@ public final class BillboardsWindow {
 
 	private static <T extends Enum<T>> T enumCombo(String label, T current, T[] values, java.util.function.Function<T, String> name) {
 		T result = current;
-		if (ImGui.beginCombo(label, name.apply(current))) {
+		if (ImGui.beginCombo(label, Lang.tr(name.apply(current)))) {
 			for (T value : values) {
-				if (ImGui.selectable(name.apply(value), value == current)) {
+				if (ImGui.selectable(Lang.tr(name.apply(value)), value == current)) {
 					result = value;
 				}
 			}
