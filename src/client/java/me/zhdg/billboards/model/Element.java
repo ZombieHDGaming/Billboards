@@ -81,6 +81,10 @@ public class Element {
 	/** Corner radius of rounded rectangles, in the same units as the size. */
 	public float cornerRadius = 0.15f;
 
+	// --- Look ---
+	public BlendMode blend = BlendMode.NORMAL;
+	public Effects effects = new Effects();
+
 	// --- Base (un-animated) values ---
 	public ChannelValues transform = new ChannelValues(Channel.TRANSFORM);
 	public ChannelValues appearance = new ChannelValues(Channel.APPEARANCE);
@@ -113,6 +117,8 @@ public class Element {
 		if (this.attachAnchor == null) this.attachAnchor = AttachAnchor.ABOVE_HEAD;
 		if (this.shapeKind == null) this.shapeKind = ShapeKind.ROUNDED_RECTANGLE;
 		if (this.gradient == null) this.gradient = Gradient.NONE;
+		if (this.blend == null) this.blend = BlendMode.NORMAL;
+		if (this.effects == null) this.effects = new Effects();
 		if (this.transform == null) this.transform = new ChannelValues(Channel.TRANSFORM);
 		if (this.appearance == null) this.appearance = new ChannelValues(Channel.APPEARANCE);
 		if (this.content == null) this.content = new ChannelValues(Channel.CONTENT);
@@ -144,6 +150,8 @@ public class Element {
 		copy.textShadow = this.textShadow;
 		copy.backgroundColor = this.backgroundColor;
 		copy.parentId = this.parentId;
+		copy.blend = this.blend;
+		copy.effects = this.effects.copy();
 		copy.mediaStartTick = this.mediaStartTick;
 		copy.mediaSpeed = this.mediaSpeed;
 		copy.mediaLoop = this.mediaLoop;

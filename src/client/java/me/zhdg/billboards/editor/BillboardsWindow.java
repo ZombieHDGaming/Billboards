@@ -17,6 +17,8 @@ import me.zhdg.billboards.keyframe.PlaybackTime;
 import me.zhdg.billboards.keyframe.TrackEditor;
 import me.zhdg.billboards.model.AttachAnchor;
 import me.zhdg.billboards.model.BillboardProject;
+import me.zhdg.billboards.model.BlendMode;
+import me.zhdg.billboards.model.Effects;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
@@ -27,6 +29,7 @@ import me.zhdg.billboards.model.ShapeKind;
 import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.model.TextAlign;
 import me.zhdg.billboards.project.AssetStore;
+import me.zhdg.billboards.project.Bundles;
 import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.CustomFont;
 import me.zhdg.billboards.render.ElementGeometry;
@@ -44,6 +47,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3fc;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -63,6 +67,12 @@ public final class BillboardsWindow {
 	private static final String[] VIDEO_EXTENSIONS = {"mp4", "mov", "mkv", "webm", "avi", "m4v", "gif"};
 
 	private static final ImBoolean OPEN = new ImBoolean(true);
+	private static @Nullable UUID presetSource = null;
+	private static ImString presetName = ImGuiHelper.createResizableImString("");
+	private static boolean openPresetPopup = false;
+	private static @Nullable String statusMessage = null;
+	private static long statusUntil = 0;
+
 	private static @Nullable UUID nameBufferOwner = null;
 	private static ImString nameBuffer = ImGuiHelper.createResizableImString("");
 
@@ -117,6 +127,8 @@ public final class BillboardsWindow {
 		if (ImGui.begin("Billboards###billboards", OPEN)) {
 			try {
 				renderAddMenu(project, replayId);
+				renderFileMenus(project, replayId, editorState);
+				renderMissingFiles(project, replayId);
 				renderViewportToolbar();
 				ImGui.separator();
 				renderOutliner(project, editorState);
@@ -285,6 +297,11 @@ public final class BillboardsWindow {
 				if (ImGui.menuItem("Duplicate")) {
 					action[0] = () -> Selection.set(duplicateTree(project, editorState, element, element.parentId).id);
 				}
+				if (ImGui.menuItem("Save as preset...")) {
+					presetSource = element.id;
+					presetName = ImGuiHelper.createResizableImString(element.name);
+					openPresetPopup = true;
+				}
 				if (ImGui.menuItem("Move up", "", false, previous != null)) {
 					action[0] = () -> swap(project, element, previous);
 				}
@@ -364,13 +381,13 @@ public final class BillboardsWindow {
 	}
 
 	private static void deleteTree(BillboardProject project, EditorState editorState, Element root) {
-		for (Element element : List.copyOf(project.elements)) {
-			if (project.isWithin(element, root.id)) {
-				project.elements.remove(element);
-				TrackEditor.removeTracks(editorState, element.id);
-				if (Selection.is(element.id)) {
-					Selection.set(null);
-				}
+		// Find everything first: once the group is removed, its contents no longer look like they're inside it.
+		List<Element> doomed = project.elements.stream().filter(element -> project.isWithin(element, root.id)).toList();
+		for (Element element : doomed) {
+			project.elements.remove(element);
+			TrackEditor.removeTracks(editorState, element.id);
+			if (Selection.is(element.id)) {
+				Selection.set(null);
 			}
 		}
 	}
@@ -391,6 +408,194 @@ public final class BillboardsWindow {
 			}
 		}
 		return copy;
+	}
+
+	// ------------------------------------------------------------------------------------------------
+	// Presets, packs and missing files
+	// ------------------------------------------------------------------------------------------------
+
+	private static void status(String message) {
+		statusMessage = message;
+		statusUntil = System.currentTimeMillis() + 6000;
+	}
+
+	private static void renderFileMenus(BillboardProject project, UUID replayId, EditorState editorState) {
+		if (ImGui.button("Presets")) {
+			ImGui.openPopup("##billboards_presets");
+		}
+		ImGuiHelper.tooltip("Reuse overlays (with their animation) in any replay. Save one by right-clicking it in the list.");
+		sameLineIfFits("Share");
+		if (ImGui.button("Share")) {
+			ImGui.openPopup("##billboards_share");
+		}
+		ImGuiHelper.tooltip("Flashback keeps editor data outside the replay file, so to give someone a replay with its overlays, send a pack too");
+
+		if (ImGui.beginPopup("##billboards_presets")) {
+			List<String> presets = Bundles.presetNames();
+			if (presets.isEmpty()) {
+				ImGui.textDisabled("No presets yet. Right-click an overlay or group in the list and choose \"Save as preset...\"");
+			}
+			for (String name : presets) {
+				if (ImGui.beginMenu(name + "##preset_" + name)) {
+					if (ImGui.menuItem("Add at the cursor")) {
+						insertPreset(project, replayId, editorState, name);
+					}
+					if (ImGui.menuItem("Delete preset")) {
+						try {
+							Files.deleteIfExists(Bundles.presetPath(name));
+							status("Deleted preset " + name);
+						} catch (Exception e) {
+							Billboards.LOGGER.error("Unable to delete preset {}", name, e);
+						}
+					}
+					ImGui.endMenu();
+				}
+			}
+			ImGui.endPopup();
+		}
+
+		if (ImGui.beginPopup("##billboards_share")) {
+			if (ImGui.menuItem("Export pack...")) {
+				String start = FabricLoader.getInstance().getGameDir().toString();
+				AsyncFileDialogs.saveFileDialog(start, "billboards-pack.zip", "Billboards pack", "zip").thenAccept(picked -> {
+					if (picked != null) {
+						Minecraft.getInstance().execute(() -> exportPack(project, replayId, editorState, Path.of(picked)));
+					}
+				});
+			}
+			ImGuiHelper.tooltip("Saves every overlay in this replay, their files and their keyframes into one file");
+			if (ImGui.menuItem("Import pack...")) {
+				pickFile(replayId, "Billboards pack", new String[]{"zip"}, path -> importPack(project, replayId, editorState, path));
+			}
+			ImGuiHelper.tooltip("Adds the overlays and keyframes from a pack to this replay");
+			ImGui.endPopup();
+		}
+
+		if (statusMessage != null && System.currentTimeMillis() < statusUntil) {
+			ImGui.textDisabled(statusMessage);
+		}
+
+		// "Save as preset" name prompt.
+		if (openPresetPopup) {
+			ImGui.openPopup("Save as preset##billboards_save_preset");
+			openPresetPopup = false;
+		}
+		if (ImGui.beginPopupModal("Save as preset##billboards_save_preset")) {
+			ImGui.inputText("Name", presetName);
+			if (ImGui.button("Save")) {
+				savePreset(project, replayId, editorState, ImGuiHelper.getString(presetName));
+				ImGui.closeCurrentPopup();
+			}
+			ImGui.sameLine();
+			if (ImGui.button("Cancel")) {
+				ImGui.closeCurrentPopup();
+			}
+			ImGui.endPopup();
+		}
+	}
+
+	static void savePreset(BillboardProject project, UUID replayId, EditorState editorState, String name) {
+		Element source = presetSource == null ? null : project.get(presetSource);
+		if (source == null || name.isBlank()) {
+			return;
+		}
+		try {
+			Bundles.write(Bundles.presetPath(name), replayId, project, editorState, List.of(source), true);
+			status("Saved preset " + name);
+		} catch (Exception e) {
+			Billboards.LOGGER.error("Unable to save preset {}", name, e);
+			status("Couldn't save the preset; see the log");
+		}
+	}
+
+	private static void insertPreset(BillboardProject project, UUID replayId, EditorState editorState, String name) {
+		try {
+			Path file = Bundles.presetPath(name);
+			Bundles.Bundle bundle = Bundles.read(file);
+			Element probe = new Element();
+			probe.space = Space.WORLD;
+			place(probe);
+			Vec3 inFront = new Vec3(probe.transform.get(Channel.X), probe.transform.get(Channel.Y), probe.transform.get(Channel.Z));
+			List<Element> roots = Bundles.insert(file, bundle, replayId, project, editorState, Math.max(0, PlaybackTime.cursorTick()), inFront);
+			if (!roots.isEmpty()) {
+				Selection.set(roots.getFirst().id);
+			}
+			status("Added preset " + name);
+		} catch (Exception e) {
+			Billboards.LOGGER.error("Unable to add preset {}", name, e);
+			status("Couldn't add the preset; see the log");
+		}
+	}
+
+	private static void exportPack(BillboardProject project, UUID replayId, EditorState editorState, Path file) {
+		try {
+			Bundles.write(file, replayId, project, editorState, project.children(null), false);
+			status("Exported " + project.elements.size() + " overlays to " + file.getFileName());
+		} catch (Exception e) {
+			Billboards.LOGGER.error("Unable to export pack", e);
+			status("Couldn't export the pack; see the log");
+		}
+	}
+
+	private static void importPack(BillboardProject project, UUID replayId, EditorState editorState, Path file) {
+		try {
+			Bundles.Bundle bundle = Bundles.read(file);
+			Bundles.insert(file, bundle, replayId, project, editorState, 0, null);
+			status("Imported " + bundle.elements().size() + " overlays from " + file.getFileName());
+		} catch (Exception e) {
+			Billboards.LOGGER.error("Unable to import pack {}", file, e);
+			status("Couldn't import the pack; see the log");
+		}
+	}
+
+	/** Lists files the project uses that are missing from its assets folder. */
+	private static void renderMissingFiles(BillboardProject project, UUID replayId) {
+		java.util.Set<String> missing = new java.util.LinkedHashSet<>();
+		for (Element element : project.elements) {
+			for (String assetId : new String[]{element.assetId, element.fontAssetId}) {
+				if (assetId != null && !AssetStore.exists(replayId, assetId)) {
+					missing.add(assetId);
+				}
+			}
+		}
+		if (missing.isEmpty()) {
+			return;
+		}
+		ImGui.textColored(0xFF5555FF, missing.size() == 1 ? "1 file is missing" : missing.size() + " files are missing");
+		ImGuiHelper.tooltip("Shown as a magenta checkerboard. Select the overlay and use Relink, or relink here.");
+		for (String assetId : missing) {
+			ImGui.pushID(assetId);
+			ImGui.bulletText(project.assets.getOrDefault(assetId, assetId));
+			ImGui.sameLine();
+			if (ImGui.smallButton("Relink...")) {
+				pickFile(replayId, "Files", new String[]{"png", "jpg", "jpeg", "gif", "bmp", "mp4", "mov", "mkv", "webm", "avi", "m4v", "ttf", "otf"},
+					path -> relink(project, replayId, assetId, path));
+			}
+			ImGui.popID();
+		}
+	}
+
+	/** Points every use of a missing (or any) asset at a newly picked file. */
+	public static void relink(BillboardProject project, UUID replayId, String oldAssetId, Path path) {
+		try {
+			String newAssetId = AssetStore.importFile(replayId, project, path);
+			for (Element element : project.elements) {
+				if (oldAssetId.equals(element.assetId)) {
+					element.assetId = newAssetId;
+				}
+				if (oldAssetId.equals(element.fontAssetId)) {
+					element.fontAssetId = newAssetId;
+				}
+			}
+			ImageTextures.retry(newAssetId);
+			MediaPlayers.retry(newAssetId);
+			CustomFont.retry(newAssetId);
+			project.markDirty();
+			status("Relinked " + path.getFileName());
+		} catch (Exception e) {
+			Billboards.LOGGER.error("Unable to relink {}", path, e);
+			status("Couldn't relink; see the log");
+		}
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -415,6 +620,11 @@ public final class BillboardsWindow {
 
 		if (ImGui.collapsingHeader("Settings", ImGuiTreeNodeFlags.DefaultOpen)) {
 			if (renderSettings(project, replayId, element)) {
+				project.markDirty();
+			}
+		}
+		if (element.type != ElementType.GROUP && ImGui.collapsingHeader("Look")) {
+			if (renderLookSettings(element)) {
 				project.markDirty();
 			}
 		}
@@ -481,6 +691,14 @@ public final class BillboardsWindow {
 			boolean video = element.type == ElementType.VIDEO;
 			String fileName = element.assetId == null ? "(none)" : project.assets.getOrDefault(element.assetId, element.assetId);
 			ImGui.text((video ? "Video: " : "Image: ") + fileName);
+			if (element.assetId != null && !AssetStore.exists(replayId, element.assetId)) {
+				ImGui.textColored(0xFF5555FF, "File missing");
+				ImGui.sameLine();
+				if (ImGui.smallButton("Relink...")) {
+					String old = element.assetId;
+					pickFile(replayId, video ? "Videos" : "Images", video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS, path -> relink(project, replayId, old, path));
+				}
+			}
 			ImGui.sameLine();
 			if (ImGui.smallButton("Replace...")) {
 				pickFile(replayId, video ? "Videos" : "Images", video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS,
@@ -505,6 +723,14 @@ public final class BillboardsWindow {
 		} else if (element.type == ElementType.TEXT) {
 			String fontName = element.fontAssetId == null ? "Minecraft" : project.assets.getOrDefault(element.fontAssetId, element.fontAssetId);
 			ImGui.text("Font: " + fontName);
+			if (element.fontAssetId != null && !AssetStore.exists(replayId, element.fontAssetId)) {
+				ImGui.textColored(0xFF5555FF, "Font file missing (using Minecraft's font)");
+				ImGui.sameLine();
+				if (ImGui.smallButton("Relink...##font")) {
+					String old = element.fontAssetId;
+					pickFile(replayId, "Fonts", FONT_EXTENSIONS, path -> relink(project, replayId, old, path));
+				}
+			}
 			ImGui.sameLine();
 			if (ImGui.smallButton("Choose...")) {
 				pickFile(replayId, "Fonts", FONT_EXTENSIONS, path -> setFont(project, replayId, element, path));
@@ -716,6 +942,89 @@ public final class BillboardsWindow {
 		}
 		ImGuiHelper.tooltip("Start again after the end instead of holding the last frame");
 		return changed;
+	}
+
+	/** Blend mode and effects. Returns true if anything changed. */
+	private static boolean renderLookSettings(Element element) {
+		boolean changed = false;
+		String unit = element.space == Space.WORLD ? "blocks" : "of frame height";
+		BlendMode blend = enumCombo("Blend", element.blend, BlendMode.values(), b -> b.displayName);
+		if (blend != element.blend) {
+			element.blend = blend;
+			changed = true;
+		}
+		ImGuiHelper.tooltip("Additive adds light (glows, beams); multiply darkens; screen lightens");
+
+		Effects effects = element.effects;
+		ImGui.pushID("shadow");
+		if (ImGui.checkbox("Drop shadow", effects.shadow)) {
+			effects.shadow = !effects.shadow;
+			changed = true;
+		}
+		if (effects.shadow) {
+			changed |= colour("Colour", effects.shadowColor, c -> effects.shadowColor = c);
+			float[] offset = {effects.shadowOffsetX, effects.shadowOffsetY};
+			if (ImGui.dragFloat2("Offset right, down (" + unit + ")", offset, 0.0005f, -100f, 100f, "%.4f")) {
+				effects.shadowOffsetX = offset[0];
+				effects.shadowOffsetY = offset[1];
+				changed = true;
+			}
+			float[] softness = {effects.shadowSoftness};
+			if (ImGui.dragFloat("Softness (" + unit + ")", softness, 0.0005f, 0f, 100f, "%.4f")) {
+				effects.shadowSoftness = Math.max(0, softness[0]);
+				changed = true;
+			}
+		}
+		ImGui.popID();
+
+		ImGui.pushID("outline");
+		if (ImGui.checkbox("Outline", effects.outline)) {
+			effects.outline = !effects.outline;
+			changed = true;
+		}
+		if (effects.outline) {
+			changed |= colour("Colour", effects.outlineColor, c -> effects.outlineColor = c);
+			float[] width = {effects.outlineWidth};
+			if (ImGui.dragFloat("Width (" + unit + ")", width, 0.0005f, 0f, 100f, "%.4f")) {
+				effects.outlineWidth = Math.max(0, width[0]);
+				changed = true;
+			}
+		}
+		ImGui.popID();
+
+		ImGui.pushID("glow");
+		if (ImGui.checkbox("Glow", effects.glow)) {
+			effects.glow = !effects.glow;
+			changed = true;
+		}
+		if (effects.glow) {
+			changed |= colour("Colour", effects.glowColor, c -> effects.glowColor = c);
+			float[] radius = {effects.glowRadius};
+			if (ImGui.dragFloat("Radius (" + unit + ")", radius, 0.001f, 0f, 100f, "%.4f")) {
+				effects.glowRadius = Math.max(0, radius[0]);
+				changed = true;
+			}
+		}
+		ImGui.popID();
+
+		if (element.type.isPicture()) {
+			float[] blur = {effects.blur};
+			if (ImGui.dragFloat("Blur (" + unit + ")", blur, 0.0005f, 0f, 100f, "%.4f")) {
+				effects.blur = Math.max(0, blur[0]);
+				changed = true;
+			}
+			ImGuiHelper.tooltip("Blurs the image or video; 0 for none");
+		}
+		return changed;
+	}
+
+	private static boolean colour(String label, int argb, java.util.function.IntConsumer set) {
+		float[] rgba = argbToFloats(argb);
+		if (ImGui.colorEdit4(label, rgba)) {
+			set.accept(floatsToArgb(rgba));
+			return true;
+		}
+		return false;
 	}
 
 	private static boolean renderShapeSettings(Element element, String unit) {

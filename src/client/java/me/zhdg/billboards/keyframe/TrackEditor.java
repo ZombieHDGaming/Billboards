@@ -151,6 +151,76 @@ public final class TrackEditor {
 		});
 	}
 
+	/** One keyframe of a Billboards track, detached from Flashback's classes (for presets and packs). */
+	public record KeyframeData(int tick, String interpolation, ChannelValues values) {
+	}
+
+	/** All keyframes of one element's channel. */
+	public record TrackData(UUID elementId, Channel channel, List<KeyframeData> keyframes) {
+	}
+
+	/** Every Billboards track (current scene) belonging to one of {@code elementIds}. */
+	public static List<TrackData> readTracks(EditorState editorState, java.util.Set<UUID> elementIds) {
+		List<TrackData> result = read(editorState, scene -> {
+			List<TrackData> tracks = new ArrayList<>();
+			for (KeyframeTrack track : scene.keyframeTracks) {
+				if (!(track.keyframeType instanceof BillboardKeyframeTypes.Type type)) {
+					continue;
+				}
+				UUID elementId = KeyframeEvaluator.elementOf(track);
+				if (elementId == null || !elementIds.contains(elementId)) {
+					continue;
+				}
+				List<KeyframeData> keyframes = new ArrayList<>();
+				for (Map.Entry<Integer, Keyframe> entry : track.keyframesByTick.entrySet()) {
+					ChannelKeyframe keyframe = (ChannelKeyframe) entry.getValue();
+					keyframes.add(new KeyframeData(entry.getKey(), keyframe.interpolationType().name(), keyframe.values.copy()));
+				}
+				tracks.add(new TrackData(elementId, type.channel, keyframes));
+			}
+			return tracks;
+		});
+		return result == null ? List.of() : result;
+	}
+
+	/** Adds a whole track for an element (e.g. from a preset), as one undoable step. */
+	public static boolean addTrack(EditorState editorState, Element element, Channel channel, List<KeyframeData> keyframes) {
+		if (keyframes.isEmpty()) {
+			return false;
+		}
+		BillboardKeyframeTypes.Type type = BillboardKeyframeTypes.of(channel);
+		return write(editorState, scene -> {
+			int index = findTrack(scene, element.id, channel);
+			List<EditorSceneHistoryAction> undo = new ArrayList<>();
+			List<EditorSceneHistoryAction> redo = new ArrayList<>();
+			boolean newTrack = index < 0;
+			if (newTrack) {
+				index = scene.keyframeTracks.size();
+				redo.add(new EditorSceneHistoryAction.AddTrack(type, index));
+				undo.add(new EditorSceneHistoryAction.RemoveTrack(type, index));
+			}
+			for (KeyframeData data : keyframes) {
+				if (!newTrack) {
+					// Undo puts back what was at this tick (or nothing).
+					Keyframe old = scene.keyframeTracks.get(index).keyframesByTick.get(data.tick());
+					undo.add(old != null
+						? new EditorSceneHistoryAction.SetKeyframe(type, index, data.tick(), old.copy())
+						: new EditorSceneHistoryAction.RemoveKeyframe(type, index, data.tick()));
+				}
+				InterpolationType interpolation;
+				try {
+					interpolation = InterpolationType.valueOf(data.interpolation());
+				} catch (IllegalArgumentException e) {
+					interpolation = InterpolationType.getDefault();
+				}
+				redo.add(new EditorSceneHistoryAction.SetKeyframe(type, index, data.tick(), new ChannelKeyframe(element.id, data.values().copy(), interpolation)));
+			}
+			scene.push(new EditorSceneHistoryEntry(undo, redo, "Added " + type.name() + " keyframes"));
+			scene.keyframeTracks.get(index).customName = trackName(element, channel);
+			return true;
+		});
+	}
+
 	/** Keeps track names in sync after an element is renamed. */
 	public static void renameTracks(EditorState editorState, Element element) {
 		write(editorState, scene -> {

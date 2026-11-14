@@ -30,7 +30,8 @@ import java.util.OptionalDouble;
  */
 public final class OverlayBatch implements AutoCloseable {
 
-	private record Key(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler) {
+	/** {@code blurU}/{@code blurV}: blur radius in UV units for the BLUR shader variant (0 otherwise). */
+	private record Key(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler, float blurU, float blurV) {
 	}
 
 	private record Draw(Key key, GpuBuffer vertices, int indexCount, PrimitiveTopology topology) {
@@ -43,7 +44,11 @@ public final class OverlayBatch implements AutoCloseable {
 
 	/** Returns a vertex consumer for quads drawn with this pipeline and texture; vertices are POSITION_TEX_COLOR. */
 	public BufferBuilder begin(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler) {
-		Key key = new Key(pipeline, texture, sampler);
+		return this.begin(pipeline, texture, sampler, 0, 0);
+	}
+
+	public BufferBuilder begin(RenderPipeline pipeline, GpuTextureView texture, GpuSampler sampler, float blurU, float blurV) {
+		Key key = new Key(pipeline, texture, sampler, blurU, blurV);
 		if (!key.equals(this.currentKey) || this.currentBuilder == null) {
 			this.finishCurrent();
 			this.currentKey = key;
@@ -85,6 +90,13 @@ public final class OverlayBatch implements AutoCloseable {
 			for (Draw draw : this.draws) {
 				RenderSystem.AutoStorageIndexBuffer indices = RenderSystem.getSequentialBuffer(draw.topology());
 				pass.setPipeline(RenderSystem.getCompiledPipeline(draw.key().pipeline()));
+				if (draw.key().blurU() != 0 || draw.key().blurV() != 0) {
+					// The blur radius travels in the texture matrix, which the overlay shader doesn't otherwise use.
+					Matrix4f radius = new Matrix4f().scaling(draw.key().blurU(), draw.key().blurV(), 1);
+					pass.setUniform("DynamicTransforms", RenderSystem.getDynamicUniforms().writeTransform(new Matrix4f(), radius));
+				} else {
+					pass.setUniform("DynamicTransforms", transforms);
+				}
 				pass.setUniform("Sampler0", draw.key().texture(), draw.key().sampler());
 				pass.setVertexBuffer(0, draw.vertices().slice());
 				pass.setIndexBuffer(indices.getBuffer(draw.indexCount()), indices.type());

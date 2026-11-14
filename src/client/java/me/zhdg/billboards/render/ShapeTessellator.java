@@ -21,11 +21,20 @@ final class ShapeTessellator {
 	private ShapeTessellator() {
 	}
 
+	/** Turns a shape colour into the vertex colour actually drawn (tinting, or an effect's silhouette colour). */
+	interface ColourMapper {
+		int map(int colour);
+	}
+
 	/**
 	 * @param unit    size multiplier (see {@link ElementGeometry})
 	 * @param tint    ARGB multiplied into every colour (the element's appearance: tint and opacity)
 	 */
 	static void draw(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float unit, int tint) {
+		draw(buffer, pose, element, bounds, unit, colour -> multiply(colour, tint));
+	}
+
+	static void draw(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float unit, ColourMapper tint) {
 		float stroke = Math.max(0, element.strokeWidth * unit);
 		switch (element.shapeKind) {
 			case LINE -> drawLine(buffer, pose, element, bounds, stroke, tint);
@@ -38,9 +47,9 @@ final class ShapeTessellator {
 				if (stroke > 0 && stroke * 2 < Math.min(width, height)) {
 					List<float[]> inner = contour(element.shapeKind, bounds.minX() + stroke, bounds.minY() + stroke,
 						bounds.maxX() - stroke, bounds.maxY() - stroke, Math.max(0, element.cornerRadius * unit - stroke));
-					ring(buffer, pose, outer, inner, multiply(element.strokeColor, tint));
+					ring(buffer, pose, outer, inner, tint.map(element.strokeColor));
 				} else if (stroke > 0) {
-					fillSolid(buffer, pose, outer, multiply(element.strokeColor, tint));
+					fillSolid(buffer, pose, outer, tint.map(element.strokeColor));
 				}
 			}
 		}
@@ -76,15 +85,15 @@ final class ShapeTessellator {
 		return points;
 	}
 
-	private static void fill(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, List<float[]> contour, int tint) {
+	private static void fill(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, List<float[]> contour, ColourMapper tint) {
 		float cx = (bounds.minX() + bounds.maxX()) / 2;
 		float cy = (bounds.minY() + bounds.maxY()) / 2;
-		int centre = multiply(fillColor(element, bounds, cx, cy), tint);
+		int centre = tint.map(fillColor(element, bounds, cx, cy));
 		for (int i = 0; i < contour.size(); i++) {
 			float[] a = contour.get(i);
 			float[] b = contour.get((i + 1) % contour.size());
-			int colourA = multiply(fillColor(element, bounds, a[0], a[1]), tint);
-			int colourB = multiply(fillColor(element, bounds, b[0], b[1]), tint);
+			int colourA = tint.map(fillColor(element, bounds, a[0], a[1]));
+			int colourB = tint.map(fillColor(element, bounds, b[0], b[1]));
 			vertex(buffer, pose, cx, cy, centre);
 			vertex(buffer, pose, a[0], a[1], colourA);
 			vertex(buffer, pose, b[0], b[1], colourB);
@@ -122,13 +131,13 @@ final class ShapeTessellator {
 		}
 	}
 
-	private static void drawLine(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float stroke, int tint) {
+	private static void drawLine(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float stroke, ColourMapper tint) {
 		float cy = (bounds.minY() + bounds.maxY()) / 2;
 		float half = (stroke > 0 ? stroke : bounds.maxY() - bounds.minY()) / 2;
 		quad(buffer, pose, element, bounds, bounds.minX(), cy - half, bounds.maxX(), cy + half, tint);
 	}
 
-	private static void drawArrow(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float stroke, int tint) {
+	private static void drawArrow(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds, float stroke, ColourMapper tint) {
 		float height = bounds.maxY() - bounds.minY();
 		float width = bounds.maxX() - bounds.minX();
 		float cy = (bounds.minY() + bounds.maxY()) / 2;
@@ -136,9 +145,9 @@ final class ShapeTessellator {
 		float headLength = Math.min(width * 0.5f, height * 0.9f);
 		float headStart = bounds.maxX() - headLength;
 		quad(buffer, pose, element, bounds, bounds.minX(), cy - shaftHalf, headStart, cy + shaftHalf, tint);
-		int top = multiply(fillColor(element, bounds, headStart, bounds.maxY()), tint);
-		int bottom = multiply(fillColor(element, bounds, headStart, bounds.minY()), tint);
-		int tip = multiply(fillColor(element, bounds, bounds.maxX(), cy), tint);
+		int top = tint.map(fillColor(element, bounds, headStart, bounds.maxY()));
+		int bottom = tint.map(fillColor(element, bounds, headStart, bounds.minY()));
+		int tip = tint.map(fillColor(element, bounds, bounds.maxX(), cy));
 		vertex(buffer, pose, headStart, bounds.minY(), bottom);
 		vertex(buffer, pose, bounds.maxX(), cy, tip);
 		vertex(buffer, pose, bounds.maxX(), cy, tip);
@@ -146,11 +155,11 @@ final class ShapeTessellator {
 	}
 
 	private static void quad(VertexConsumer buffer, Matrix4f pose, Element element, ElementGeometry.Bounds bounds,
-	                         float x0, float y0, float x1, float y1, int tint) {
-		vertex(buffer, pose, x0, y1, multiply(fillColor(element, bounds, x0, y1), tint));
-		vertex(buffer, pose, x0, y0, multiply(fillColor(element, bounds, x0, y0), tint));
-		vertex(buffer, pose, x1, y0, multiply(fillColor(element, bounds, x1, y0), tint));
-		vertex(buffer, pose, x1, y1, multiply(fillColor(element, bounds, x1, y1), tint));
+	                         float x0, float y0, float x1, float y1, ColourMapper tint) {
+		vertex(buffer, pose, x0, y1, tint.map(fillColor(element, bounds, x0, y1)));
+		vertex(buffer, pose, x0, y0, tint.map(fillColor(element, bounds, x0, y0)));
+		vertex(buffer, pose, x1, y0, tint.map(fillColor(element, bounds, x1, y0)));
+		vertex(buffer, pose, x1, y1, tint.map(fillColor(element, bounds, x1, y1)));
 	}
 
 	private static void vertex(VertexConsumer buffer, Matrix4f pose, float x, float y, int colour) {

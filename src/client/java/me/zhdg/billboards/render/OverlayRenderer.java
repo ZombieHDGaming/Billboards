@@ -10,7 +10,10 @@ import me.zhdg.billboards.keyframe.KeyframeEvaluator;
 import me.zhdg.billboards.keyframe.PlaybackTime;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
+import me.zhdg.billboards.model.BlendMode;
+import me.zhdg.billboards.model.Effects;
 import me.zhdg.billboards.model.Element;
+import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.project.ProjectManager;
 import net.minecraft.client.Minecraft;
@@ -155,13 +158,97 @@ public final class OverlayRenderer {
 	// ------------------------------------------------------------------------------------------------
 
 	/**
+	 * How one pass over an element is drawn: normally, or as a single-colour silhouette (for shadows, outlines and
+	 * glows) moved by an offset in the element's local frame.
+	 *
+	 * @param silhouetteColour ARGB colour of the silhouette (its alpha multiplies the element's own alpha)
+	 */
+	private record Style(boolean silhouette, int silhouetteColour, float offsetX, float offsetY, BlendMode blend) {
+		static Style normal(BlendMode blend) {
+			return new Style(false, 0, 0, 0, blend);
+		}
+
+		static Style silhouette(int colour, float offsetX, float offsetY) {
+			return new Style(true, colour, offsetX, offsetY, BlendMode.NORMAL);
+		}
+
+		Matrix4f apply(Matrix4f root) {
+			return this.offsetX == 0 && this.offsetY == 0 ? root : new Matrix4f(root).translate(this.offsetX, this.offsetY, 0);
+		}
+
+		/** The vertex colour for a colour the element would normally draw with. */
+		int map(int colour, int tint) {
+			if (!this.silhouette) {
+				return ShapeTessellator.multiply(colour, tint);
+			}
+			int alpha = ((colour >>> 24) & 0xFF) * ((tint >>> 24) & 0xFF) / 255 * ((this.silhouetteColour >>> 24) & 0xFF) / 255;
+			return alpha << 24 | (this.silhouetteColour & 0xFFFFFF);
+		}
+	}
+
+	/** Taps around a circle, used to grow silhouettes into outlines, soft shadows and glows. */
+	private static final int RING_TAPS = 12;
+
+	/**
 	 * @param unit size multiplier: 1 in the world (sizes are in blocks), the frame height on screen
 	 */
 	private static void drawElement(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
+		Element element = node.element();
+		if (element.type == ElementType.GROUP) {
+			return;
+		}
+		Effects effects = element.effects;
+
+		if (effects.glow && effects.glowRadius > 0) {
+			// Three soft rings, fainter further out.
+			float radius = effects.glowRadius * unit;
+			for (int ring = 3; ring >= 1; ring--) {
+				int colour = scaleAlpha(effects.glowColor, 0.35 * (4 - ring) / 3.0);
+				drawRing(batch, node, root, unit, depthTest, replayId, radius * ring / 3f, colour, 0);
+			}
+		}
+		if (effects.shadow) {
+			// The offset is right/down as seen on screen, so it doesn't turn with the element.
+			float dx = effects.shadowOffsetX * unit;
+			float dy = effects.shadowOffsetY * unit;
+			Matrix4f shadowRoot = element.space == me.zhdg.billboards.model.Space.SCREEN
+				? new Matrix4f().translate(dx, dy, 0).mul(root)
+				: new Matrix4f().translate(dx, -dy, 0).mul(root);
+			float softness = effects.shadowSoftness * unit;
+			if (softness <= 0) {
+				drawContent(batch, node, shadowRoot, unit, depthTest, replayId, Style.silhouette(effects.shadowColor, 0, 0));
+			} else {
+				// Centre plus a ring, each faint enough that where they all overlap the shadow reaches its full strength.
+				int colour = splitAlpha(effects.shadowColor, RING_TAPS + 1);
+				drawContent(batch, node, shadowRoot, unit, depthTest, replayId, Style.silhouette(colour, 0, 0));
+				drawRing(batch, node, shadowRoot, unit, depthTest, replayId, softness, colour, 0);
+			}
+		}
+		if (effects.outline && effects.outlineWidth > 0) {
+			float width = effects.outlineWidth * unit;
+			drawRing(batch, node, root, unit, depthTest, replayId, width, effects.outlineColor, 0);
+			drawRing(batch, node, root, unit, depthTest, replayId, width / 2, effects.outlineColor, (float) Math.PI / RING_TAPS);
+		}
+
+		drawContent(batch, node, root, unit, depthTest, replayId, Style.normal(element.blend));
+	}
+
+	private static void drawRing(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId,
+	                             float radius, int colour, float angleOffset) {
+		for (int i = 0; i < RING_TAPS; i++) {
+			double angle = angleOffset + 2 * Math.PI * i / RING_TAPS;
+			Style style = Style.silhouette(colour, radius * (float) Math.cos(angle), radius * (float) Math.sin(angle));
+			drawContent(batch, node, root, unit, depthTest, replayId, style);
+		}
+	}
+
+	private static void drawContent(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest,
+	                                @Nullable UUID replayId, Style style) {
+		Matrix4f pose = style.apply(root);
 		switch (node.element().type) {
-			case IMAGE, VIDEO -> drawImage(batch, node, root, unit, depthTest, replayId);
-			case TEXT -> drawText(batch, node, root, unit, depthTest);
-			case SHAPE -> drawShape(batch, node, root, unit, depthTest);
+			case IMAGE, VIDEO -> drawImage(batch, node, pose, unit, depthTest, replayId, style);
+			case TEXT -> drawText(batch, node, pose, unit, depthTest, style);
+			case SHAPE -> drawShape(batch, node, pose, unit, depthTest, style);
 			case GROUP -> {
 			}
 		}
@@ -183,7 +270,8 @@ public final class OverlayRenderer {
 		return RenderSystem.getSamplerCache().getClampToEdge(mode);
 	}
 
-	private static void drawImage(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
+	private static void drawImage(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest,
+	                              @Nullable UUID replayId, Style style) {
 		Element element = node.element();
 		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, node.content(), unit);
 		if (bounds == null) {
@@ -210,6 +298,10 @@ public final class OverlayRenderer {
 		float v0 = content.getFloat(Channel.CROP_TOP);
 		float u1 = content.getFloat(Channel.CROP_RIGHT);
 		float v1 = content.getFloat(Channel.CROP_BOTTOM);
+		float minX = bounds.minX();
+		float minY = bounds.minY();
+		float maxX = bounds.maxX();
+		float maxY = bounds.maxY();
 		if (missing) {
 			// Tile the checkerboard rather than stretching two pixels across the whole quad.
 			u0 = 0;
@@ -218,27 +310,50 @@ public final class OverlayRenderer {
 			v1 = Math.max(1, element.height * 4);
 		}
 
-		int color = color(node.appearance());
+		// Blur (normal pass only): grow the quad by the radius so the blurred edge has room, in UV units too.
+		float blurU = 0;
+		float blurV = 0;
+		OverlayPipelines.Variant variant = OverlayPipelines.Variant.of(style.silhouette(), false);
+		if (!style.silhouette() && !missing && element.effects.blur > 0) {
+			float radius = element.effects.blur * unit;
+			float uPerUnit = (u1 - u0) / Math.max(1e-6f, maxX - minX);
+			float vPerUnit = (v1 - v0) / Math.max(1e-6f, maxY - minY);
+			blurU = radius * uPerUnit;
+			blurV = radius * vPerUnit;
+			minX -= radius;
+			maxX += radius;
+			minY -= radius;
+			maxY += radius;
+			u0 -= blurU;
+			u1 += blurU;
+			v0 -= blurV;
+			v1 += blurV;
+			variant = OverlayPipelines.Variant.BLUR;
+		}
+
+		int color = style.map(0xFFFFFFFF, color(node.appearance()));
 		GpuSampler sampler = missing
 			? RenderSystem.getSamplerCache().getRepeat(FilterMode.NEAREST)
 			: sampler(element.pixelated ? FilterMode.NEAREST : FilterMode.LINEAR);
-		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), view, sampler);
-		buffer.addVertex(root, bounds.minX(), bounds.maxY(), 0).setUv(u0, v0).setColor(color);
-		buffer.addVertex(root, bounds.minX(), bounds.minY(), 0).setUv(u0, v1).setColor(color);
-		buffer.addVertex(root, bounds.maxX(), bounds.minY(), 0).setUv(u1, v1).setColor(color);
-		buffer.addVertex(root, bounds.maxX(), bounds.maxY(), 0).setUv(u1, v0).setColor(color);
+		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, variant, style.blend()), view, sampler, blurU, blurV);
+		buffer.addVertex(root, minX, maxY, 0).setUv(u0, v0).setColor(color);
+		buffer.addVertex(root, minX, minY, 0).setUv(u0, v1).setColor(color);
+		buffer.addVertex(root, maxX, minY, 0).setUv(u1, v1).setColor(color);
+		buffer.addVertex(root, maxX, maxY, 0).setUv(u1, v0).setColor(color);
 	}
 
-	private static void drawShape(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest) {
+	private static void drawShape(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, Style style) {
 		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(node.element(), node.content(), unit);
 		if (bounds == null) {
 			return;
 		}
-		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), ImageTextures.white().view(), sampler(FilterMode.NEAREST));
-		ShapeTessellator.draw(buffer, root, node.element(), bounds, unit, color(node.appearance()));
+		int tint = color(node.appearance());
+		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, OverlayPipelines.Variant.of(style.silhouette(), false), style.blend()),
+			ImageTextures.white().view(), sampler(FilterMode.NEAREST));
+		ShapeTessellator.draw(buffer, root, node.element(), bounds, unit, colour -> style.map(colour, tint));
 	}
 
-	private static void drawText(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest) {
+	private static void drawText(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, Style style) {
 		Element element = node.element();
 		ChannelValues appearance = node.appearance();
 		ElementGeometry.TextLayout layout = ElementGeometry.textLayout(element, node.content(), unit);
@@ -251,15 +366,17 @@ public final class OverlayRenderer {
 			.translate(-element.pivotX * layout.blockWidth() * pixel, element.pivotY * layout.blockHeight() * pixel, 0)
 			.scale(pixel, -pixel, pixel); // glyph y grows downwards
 
-		int color = color(appearance);
-		int background = scaleAlpha(element.backgroundColor, appearance.get(Channel.OPACITY));
+		int color = style.map(0xFFFFFFFF, color(appearance));
+		// Silhouettes are just the glyphs: no text shadow or background.
+		boolean textShadow = element.textShadow && !style.silhouette();
+		int background = style.silhouette() ? 0 : scaleAlpha(element.backgroundColor, appearance.get(Channel.OPACITY));
 
 		if (layout.font() != null) {
-			drawCustomFontText(batch, element, layout, pose, color, background, depthTest);
+			drawCustomFontText(batch, element, layout, pose, color, background, textShadow, depthTest, style);
 			return;
 		}
 
-		if (appearance.get(Channel.OPACITY) < MIN_TEXT_ALPHA) {
+		if (((color >>> 24) & 0xFF) / 255f < MIN_TEXT_ALPHA) {
 			return;
 		}
 		Font font = Minecraft.getInstance().font;
@@ -267,12 +384,14 @@ public final class OverlayRenderer {
 		String[] lines = layout.lines();
 		for (int i = 0; i < lines.length; i++) {
 			float x = alignedX(element, layout, i);
-			Font.PreparedText prepared = font.prepareText(lines[i], x, i * layout.lineHeight(), color, element.textShadow, background);
+			Font.PreparedText prepared = font.prepareText(lines[i], x, i * layout.lineHeight(), color, textShadow, background);
 			prepared.visit(new Font.GlyphVisitor() {
 				@Override
 				public void acceptRenderable(TextRenderable renderable) {
 					boolean grayscale = renderable.guiPipeline() == RenderPipelines.GUI_TEXT_GRAYSCALE;
-					VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, grayscale), renderable.textureView(), sampler);
+					VertexConsumer buffer = batch.begin(
+						OverlayPipelines.get(depthTest, OverlayPipelines.Variant.of(style.silhouette(), grayscale), style.blend()),
+						renderable.textureView(), sampler);
 					// "Flat": no z offsets between shadow, glyph and background. Vanilla relies on depth testing to
 					// keep the glyph above its shadow; overlays are drawn strictly in order instead, and the offsets
 					// would push glyphs out of the screen pass's depth range.
@@ -284,14 +403,15 @@ public final class OverlayRenderer {
 
 	/** Text in a TTF/OTF font: background, then shadow, then glyphs, all from the font's glyph atlas. */
 	private static void drawCustomFontText(OverlayBatch batch, Element element, ElementGeometry.TextLayout layout, Matrix4f pose,
-	                                       int color, int background, boolean depthTest) {
+	                                       int color, int background, boolean textShadow, boolean depthTest, Style style) {
 		CustomFont font = layout.font();
 		// Same proportions as Minecraft's font: one "pixel" of a 9-pixel line.
 		float unitPixel = layout.lineHeight() / 9f;
 		String[] lines = layout.lines();
 
 		if ((background >>> 24) != 0) {
-			VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), ImageTextures.white().view(), sampler(FilterMode.NEAREST));
+			VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, OverlayPipelines.Variant.NORMAL, style.blend()),
+				ImageTextures.white().view(), sampler(FilterMode.NEAREST));
 			for (int i = 0; i < lines.length; i++) {
 				float x = alignedX(element, layout, i);
 				float top = i * layout.lineHeight();
@@ -303,8 +423,9 @@ public final class OverlayRenderer {
 		for (String line : lines) {
 			font.width(line);
 		}
-		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), font.textureView(), sampler(FilterMode.LINEAR));
-		if (element.textShadow) {
+		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, OverlayPipelines.Variant.of(style.silhouette(), false), style.blend()),
+			font.textureView(), sampler(FilterMode.LINEAR));
+		if (textShadow) {
 			int shadow = (color & 0xFF000000) | ((((color >> 16) & 0xFF) / 4) << 16) | ((((color >> 8) & 0xFF) / 4) << 8) | ((color & 0xFF) / 4);
 			drawGlyphs(buffer, font, element, layout, pose, unitPixel, shadow);
 		}
@@ -352,5 +473,12 @@ public final class OverlayRenderer {
 	private static int scaleAlpha(int argb, double opacity) {
 		int alpha = (int) Math.round(((argb >>> 24) & 0xFF) * Math.max(0, Math.min(1, opacity)));
 		return alpha << 24 | (argb & 0xFFFFFF);
+	}
+
+	/** An alpha for each of {@code taps} overlapping copies, so that together they reach the colour's own alpha. */
+	private static int splitAlpha(int argb, int taps) {
+		double alpha = ((argb >>> 24) & 0xFF) / 255.0;
+		double each = 1 - Math.pow(1 - Math.min(alpha, 0.999), 1.0 / taps);
+		return (int) Math.round(each * 255) << 24 | (argb & 0xFFFFFF);
 	}
 }
