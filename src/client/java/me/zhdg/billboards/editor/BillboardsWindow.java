@@ -6,6 +6,7 @@ import com.moulberry.flashback.editor.ui.ImGuiHelper;
 import com.moulberry.flashback.state.EditorState;
 import com.moulberry.flashback.utils.AsyncFileDialogs;
 import imgui.moulberry90.ImGui;
+import imgui.moulberry90.ImGuiViewport;
 import imgui.moulberry90.flag.ImGuiCond;
 import imgui.moulberry90.flag.ImGuiTreeNodeFlags;
 import imgui.moulberry90.type.ImBoolean;
@@ -14,6 +15,7 @@ import me.zhdg.billboards.Billboards;
 import me.zhdg.billboards.keyframe.KeyframeEvaluator;
 import me.zhdg.billboards.keyframe.PlaybackTime;
 import me.zhdg.billboards.keyframe.TrackEditor;
+import me.zhdg.billboards.model.AttachAnchor;
 import me.zhdg.billboards.model.BillboardProject;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
@@ -24,16 +26,22 @@ import me.zhdg.billboards.model.Space;
 import me.zhdg.billboards.model.TextAlign;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.ProjectManager;
+import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.ImageTextures;
 import me.zhdg.billboards.render.OverlayRenderer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3fc;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -46,7 +54,6 @@ public final class BillboardsWindow {
 	private static final String[] IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp"};
 
 	private static final ImBoolean OPEN = new ImBoolean(true);
-	private static @Nullable UUID selected = null;
 	private static @Nullable UUID nameBufferOwner = null;
 	private static ImString nameBuffer = ImGuiHelper.createResizableImString("");
 
@@ -92,15 +99,20 @@ public final class BillboardsWindow {
 			return;
 		}
 
-		ImGui.setNextWindowSize(380, 560, ImGuiCond.FirstUseEver);
+		// First use: along the right edge of the screen, so it doesn't cover the game frame.
+		ImGuiViewport viewport = ImGui.getMainViewport();
+		float width = Math.min(400, viewport.getSizeX() * 0.4f);
+		ImGui.setNextWindowPos(viewport.getPosX() + viewport.getSizeX() - width, viewport.getPosY() + 30, ImGuiCond.FirstUseEver);
+		ImGui.setNextWindowSize(width, Math.max(300, viewport.getSizeY() - 60), ImGuiCond.FirstUseEver);
 		OPEN.set(true);
 		if (ImGui.begin("Billboards###billboards", OPEN)) {
 			try {
 				renderAddMenu(project, replayId);
+				renderViewportToolbar();
 				ImGui.separator();
 				renderOutliner(project, editorState);
 				ImGui.separator();
-				Element element = selected == null ? null : project.get(selected);
+				Element element = Selection.get(project);
 				if (element == null) {
 					ImGui.textDisabled("Select an overlay to edit it.");
 				} else {
@@ -145,6 +157,31 @@ public final class BillboardsWindow {
 		}
 	}
 
+	private static void renderViewportToolbar() {
+		ImGui.textDisabled("Viewport:");
+		for (ViewportTools.Tool tool : ViewportTools.Tool.values()) {
+			ImGui.sameLine();
+			if (ImGui.radioButton(tool.displayName + " (" + tool.key + ")", ViewportTools.tool == tool)) {
+				ViewportTools.tool = tool;
+			}
+		}
+		if (ImGui.checkbox("Local axes", ViewportTools.localAxes)) {
+			ViewportTools.localAxes = !ViewportTools.localAxes;
+		}
+		ImGuiHelper.tooltip("Move and rotate along the overlay's own axes instead of the world's");
+		ImGui.sameLine();
+		if (ImGui.checkbox("Snap", ViewportTools.snap)) {
+			ViewportTools.snap = !ViewportTools.snap;
+		}
+		ImGuiHelper.tooltip("Move in 0.25 block steps (1% of the frame on screen), rotate in 15° steps, scale in 0.1 steps");
+		ImGui.sameLine();
+		if (ImGui.checkbox("Auto-key", ViewportTools.autoKey)) {
+			ViewportTools.autoKey = !ViewportTools.autoKey;
+		}
+		ImGuiHelper.tooltip("When on, editing a channel that isn't animated yet adds a keyframe at the cursor instead of changing its base value");
+		ImGui.textDisabled("Click an overlay in the viewport to select it; drag the gizmo to edit it.");
+	}
+
 	private static void renderOutliner(BillboardProject project, EditorState editorState) {
 		if (project.elements.isEmpty()) {
 			ImGui.textDisabled("No overlays yet. Add an image or some text.");
@@ -169,8 +206,8 @@ public final class BillboardsWindow {
 			ImGui.sameLine();
 
 			String label = element.name + "  (" + element.type.displayName + ", " + element.space.displayName + ")";
-			if (ImGui.selectable(label, element.id.equals(selected))) {
-				selected = element.id;
+			if (ImGui.selectable(label, Selection.is(element.id))) {
+				Selection.set(element.id);
 			}
 			if (ImGui.beginPopupContextItem("##context")) {
 				if (ImGui.menuItem("Duplicate")) {
@@ -199,7 +236,7 @@ public final class BillboardsWindow {
 			copy.name = toDuplicate.name + " copy";
 			project.elements.add(project.elements.indexOf(toDuplicate) + 1, copy);
 			TrackEditor.duplicateTracks(editorState, toDuplicate.id, copy);
-			selected = copy.id;
+			Selection.set(copy.id);
 			project.markDirty();
 		}
 		if (moveFrom >= 0) {
@@ -209,8 +246,8 @@ public final class BillboardsWindow {
 		if (toDelete != null) {
 			project.elements.remove(toDelete);
 			TrackEditor.removeTracks(editorState, toDelete.id);
-			if (toDelete.id.equals(selected)) {
-				selected = null;
+			if (Selection.is(toDelete.id)) {
+				Selection.set(null);
 			}
 			project.markDirty();
 		}
@@ -267,6 +304,9 @@ public final class BillboardsWindow {
 				changed = true;
 			}
 			ImGuiHelper.tooltip("When off, the overlay is always drawn on top of the world");
+			if (renderAttachment(element)) {
+				changed = true;
+			}
 		}
 
 		float[] pivot = {element.pivotX, element.pivotY};
@@ -329,6 +369,102 @@ public final class BillboardsWindow {
 		return changed;
 	}
 
+	/** Entity attachment settings for a world element. Returns true if anything changed. */
+	private static boolean renderAttachment(Element element) {
+		boolean changed = false;
+		EditorState editorState = PlaybackTime.liveEditorState();
+		int tick = PlaybackTime.cursorTick();
+		boolean positionAnimated = editorState != null && tick >= 0
+			&& TrackEditor.keyState(editorState, element.id, Channel.TRANSFORM, tick) != TrackEditor.KeyState.NOT_ANIMATED;
+
+		if (element.attachEntity == null) {
+			if (ImGui.button("Attach to entity...")) {
+				ImGui.openPopup("##billboards_attach");
+			}
+			ImGuiHelper.tooltip(positionAnimated
+				? "Follow an entity. Position keyframes will then be offsets from the entity."
+				: "Follow an entity, e.g. to pin a label above a player's head. The position becomes an offset from the entity.");
+			if (ImGui.beginPopup("##billboards_attach")) {
+				List<Entity> candidates = attachCandidates();
+				if (candidates.isEmpty()) {
+					ImGui.textDisabled("No entities nearby");
+				}
+				Vec3 eye = Minecraft.getInstance().gameRenderer.mainCamera().position();
+				for (Entity entity : candidates) {
+					String label = entity.getName().getString() + "  (" + entity.getType().getDescription().getString() + ", "
+						+ Math.round(entity.position().distanceTo(eye)) + " blocks)##" + entity.getUUID();
+					if (ImGui.selectable(label)) {
+						element.attachEntity = entity.getUUID();
+						element.attachEntityName = entity.getName().getString();
+						if (!positionAnimated) {
+							// Start right on the anchor (above the head by default), like a name tag.
+							element.transform.set(Channel.X, 0);
+							element.transform.set(Channel.Y, 0);
+							element.transform.set(Channel.Z, 0);
+						}
+						changed = true;
+						ImGui.closeCurrentPopup();
+					}
+				}
+				ImGui.endPopup();
+			}
+			return changed;
+		}
+
+		Entity entity = ElementGeometry.attachedEntity(element);
+		String name = entity != null ? entity.getName().getString() : (element.attachEntityName == null ? "?" : element.attachEntityName);
+		ImGui.text("Attached to " + name + (entity == null ? " (not loaded at this tick)" : ""));
+		ImGui.sameLine();
+		if (ImGui.smallButton("Detach")) {
+			if (entity != null && !positionAnimated) {
+				// Keep the overlay where it is now.
+				Vec3 world = ElementGeometry.worldPosition(element, element.transform);
+				if (world != null) {
+					element.transform.set(Channel.X, world.x);
+					element.transform.set(Channel.Y, world.y);
+					element.transform.set(Channel.Z, world.z);
+				}
+			}
+			element.attachEntity = null;
+			element.attachEntityName = null;
+			return true;
+		}
+		ImGuiHelper.tooltip(positionAnimated
+			? "Position keyframes stay as they are and become world coordinates again"
+			: "Stop following the entity, leaving the overlay where it is now");
+
+		AttachAnchor anchor = enumCombo("Anchor", element.attachAnchor, AttachAnchor.values(), a -> a.displayName);
+		if (anchor != element.attachAnchor) {
+			element.attachAnchor = anchor;
+			changed = true;
+		}
+		if (ImGui.checkbox("Turn with entity", element.attachRotate)) {
+			element.attachRotate = !element.attachRotate;
+			changed = true;
+		}
+		ImGuiHelper.tooltip("Rotate the offset (and a fixed-facing overlay) with the entity's body");
+		ImGui.textDisabled("Position is an offset from the anchor while attached.");
+		return changed;
+	}
+
+	/** Entities near the camera to attach to: players first, then by distance. */
+	private static List<Entity> attachCandidates() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft.level == null) {
+			return List.of();
+		}
+		Vec3 eye = minecraft.gameRenderer.mainCamera().position();
+		List<Entity> result = new ArrayList<>();
+		for (Entity entity : minecraft.level.entitiesForRendering()) {
+			if (entity == minecraft.player || entity == minecraft.getCameraEntity() || entity.position().distanceToSqr(eye) > 128 * 128) {
+				continue;
+			}
+			result.add(entity);
+		}
+		result.sort(Comparator.comparing((Entity e) -> !(e instanceof Player)).thenComparingDouble(e -> e.position().distanceToSqr(eye)));
+		return result.size() > 40 ? result.subList(0, 40) : result;
+	}
+
 	private static void renderChannel(BillboardProject project, EditorState editorState, Element element, Channel channel,
 	                                  KeyframeEvaluator.Frame frame, int tick) {
 		if (!ImGui.collapsingHeader(channel.displayName, ImGuiTreeNodeFlags.DefaultOpen)) {
@@ -344,7 +480,9 @@ public final class BillboardsWindow {
 				}
 				ImGuiHelper.tooltip("Add a keyframe at the cursor (tick " + tick + ") and show this channel on the timeline");
 				ImGui.sameLine();
-				ImGui.textDisabled("Not animated: edits change the base value");
+				ImGui.textDisabled(ViewportTools.autoKey
+					? "Not animated: auto-key adds a keyframe at tick " + tick
+					: "Not animated: edits change the base value");
 			}
 			case ANIMATED -> {
 				if (ImGui.smallButton("Add keyframe")) {
@@ -365,12 +503,7 @@ public final class BillboardsWindow {
 		ChannelValues shown = (state == TrackEditor.KeyState.NOT_ANIMATED ? element.base(channel) : OverlayRenderer.valuesOf(frame, element, channel)).copy();
 		boolean changed = ChannelEditor.render(shown, element.space, shown::set, text -> shown.text = text);
 		if (changed) {
-			if (state == TrackEditor.KeyState.NOT_ANIMATED) {
-				element.setBase(channel, shown);
-				project.markDirty();
-			} else {
-				TrackEditor.setKeyframe(editorState, element, shown, tick);
-			}
+			ViewportTools.commitValues(project, editorState, element, shown);
 		}
 		ImGui.popID();
 	}
@@ -431,7 +564,7 @@ public final class BillboardsWindow {
 	private static void add(BillboardProject project, Element element) {
 		project.elements.add(element);
 		project.markDirty();
-		selected = element.id;
+		Selection.set(element.id);
 	}
 
 	/** World: 3 blocks in front of the camera, facing it. Screen: the centre of the frame. */

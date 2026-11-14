@@ -45,6 +45,9 @@ import java.util.stream.Stream;
  */
 public class BillboardsClientGameTest implements FabricClientGameTest {
 
+	private static UUID screenId;
+	private static UUID worldId;
+
 	/** Exact colours of the generated test images, so they can be found in screenshots. */
 	private static final int SCREEN_IMAGE_RGB = 0x00FF00;
 	private static final int WORLD_IMAGE_RGB = 0x00FFFF;
@@ -56,7 +59,11 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		// Queue it on Minecraft's own task loop: Fabric's gametest defers world loads started from inside a test task, and
 		// that deferral loses the thread-local Flashback uses to start its replay server instead of a normal one.
-		context.runOnClient(minecraft -> minecraft.schedule(() -> Flashback.openReplayWorld(replay)));
+		context.runOnClient(minecraft -> {
+			// Keep Flashback's "Tip of the day" popup from covering the viewport (the real-input checks click in it).
+			Flashback.getConfig().internal.showTipOfTheDay = false;
+			minecraft.schedule(() -> Flashback.openReplayWorld(replay));
+		});
 		waitForReplay(context);
 		context.waitTicks(100); // let the editor UI, chunks and snapshot processing settle
 
@@ -104,6 +111,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		});
 
 		checkHiddenHud(context);
+		ViewportChecks.run(context, screenId, worldId);
 		log("All Billboards checks passed");
 
 		// Leave the replay (on Minecraft's own task loop, for the same reason as opening it) so the test ends cleanly.
@@ -159,7 +167,10 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 				Flashback.getConfig().recordingControls.quicksave = true;
 				Flashback.startRecordingReplay();
 			});
-			context.waitTicks(120);
+			context.waitTicks(60);
+			// Move the player half way through, so the replay has a moving entity to attach a label to.
+			singleplayer.getServer().runCommand("tp @a ~8 ~ ~");
+			context.waitTicks(60);
 			context.runOnClient(minecraft -> Flashback.finishRecordingReplay());
 
 			for (int i = 0; i < 600; i++) {
@@ -184,6 +195,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		// Screen image in the bottom-right corner, fading in over ticks 0..40.
 		Element screen = new Element();
+		screenId = screen.id;
 		screen.name = "Screen image";
 		screen.type = ElementType.IMAGE;
 		screen.space = Space.SCREEN;
@@ -218,6 +230,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		Vec3 eye = camera.position();
 		Vector3fc forward = camera.forwardVector();
 		Element world = new Element();
+		worldId = world.id;
 		world.name = "World image";
 		world.type = ElementType.IMAGE;
 		world.space = Space.WORLD;

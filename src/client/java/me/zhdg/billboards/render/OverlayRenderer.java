@@ -1,9 +1,10 @@
 package me.zhdg.billboards.render;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuSampler;
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.moulberry.flashback.Flashback;
 import me.zhdg.billboards.keyframe.KeyframeEvaluator;
 import me.zhdg.billboards.keyframe.PlaybackTime;
 import me.zhdg.billboards.model.BillboardProject;
@@ -30,8 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Draws overlays. Both passes lay elements out in a local frame where +X is right and +Y is up as seen from the
- * front, with the element's pivot at the origin; only the root matrix differs between world and screen space.
+ * Draws overlays. Placement comes from {@link ElementGeometry}; this class turns it into quads.
  */
 public final class OverlayRenderer {
 
@@ -41,8 +41,31 @@ public final class OverlayRenderer {
 	private OverlayRenderer() {
 	}
 
-	/** A resolved element: static settings plus the animated values for this frame. */
-	private record Resolved(Element element, ChannelValues transform, ChannelValues appearance, ChannelValues content) {
+	/** A resolved element: static settings plus the values for this frame. */
+	public record Resolved(Element element, ChannelValues transform, ChannelValues appearance, ChannelValues content) {
+	}
+
+	/** The camera of the last rendered level frame, for picking and gizmos in the editor. */
+	public record SceneCamera(Vec3 position, Quaternionf orientation, Matrix4f viewRotation, Matrix4f projection) {
+	}
+
+	/**
+	 * Values shown while the user drags a gizmo, so the drag previews live without writing a keyframe every frame.
+	 * Never used while exporting.
+	 */
+	public interface PreviewSource {
+		@Nullable ChannelValues preview(UUID elementId, Channel channel);
+	}
+
+	private static @Nullable SceneCamera lastCamera = null;
+	private static @Nullable PreviewSource previewSource = null;
+
+	public static @Nullable SceneCamera lastCamera() {
+		return lastCamera;
+	}
+
+	public static void setPreviewSource(@Nullable PreviewSource source) {
+		previewSource = source;
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -51,6 +74,9 @@ public final class OverlayRenderer {
 
 	/** World-space pass, called at the end of level rendering with the level projection still bound. */
 	public static void renderWorld(CameraRenderState camera) {
+		lastCamera = new SceneCamera(camera.pos, new Quaternionf(camera.orientation),
+			new Matrix4f(camera.viewRotationMatrix), new Matrix4f(camera.projectionMatrix));
+
 		List<Resolved> elements = resolve(Space.WORLD);
 		if (elements.isEmpty()) {
 			return;
@@ -66,7 +92,11 @@ public final class OverlayRenderer {
 		UUID replayId = ProjectManager.currentReplayId();
 		try (OverlayBatch batch = new OverlayBatch()) {
 			for (Resolved resolved : elements) {
-				Matrix4f root = worldRoot(resolved, camera);
+				Matrix4f model = ElementGeometry.worldModel(resolved.element(), resolved.transform(), cameraPos, camera.orientation);
+				if (model == null) {
+					continue;
+				}
+				Matrix4f root = new Matrix4f(camera.viewRotationMatrix).mul(model);
 				drawElement(batch, resolved, root, 1.0f, resolved.element().depthTest, replayId);
 			}
 			batch.draw("billboards world overlays", true);
@@ -89,12 +119,7 @@ public final class OverlayRenderer {
 		ScreenProjection.begin(width, height);
 		try (OverlayBatch batch = new OverlayBatch()) {
 			for (Resolved resolved : elements) {
-				ChannelValues t = resolved.transform();
-				Matrix4f root = new Matrix4f()
-					.translate(t.getFloat(Channel.X) * width, t.getFloat(Channel.Y) * height, 0)
-					.scale(1, -1, 1) // screen pixels grow downwards; the local frame is y-up
-					.rotateZ((float) Math.toRadians(t.get(Channel.ROLL)))
-					.scale(t.getFloat(Channel.SCALE_X), t.getFloat(Channel.SCALE_Y), 1);
+				Matrix4f root = ElementGeometry.screenModel(resolved.transform(), width, height);
 				// Sizes are fractions of the frame height.
 				drawElement(batch, resolved, root, height, false, replayId);
 			}
@@ -108,7 +133,8 @@ public final class OverlayRenderer {
 	// Resolution
 	// ------------------------------------------------------------------------------------------------
 
-	private static List<Resolved> resolve(Space space) {
+	/** Every visible element of a space with its values for the current frame. */
+	public static List<Resolved> resolve(Space space) {
 		List<Resolved> result = new ArrayList<>();
 		BillboardProject project = ProjectManager.getCurrent();
 		if (project == null || project.elements.isEmpty()) {
@@ -117,7 +143,7 @@ public final class OverlayRenderer {
 		KeyframeEvaluator.Frame frame = KeyframeEvaluator.evaluate(PlaybackTime.current());
 
 		for (Element element : project.elements) {
-			if (element.space != space || element.hidden) {
+			if (element.space != space || element.hidden || (space == Space.WORLD && !ElementGeometry.isPlaced(element))) {
 				continue;
 			}
 			ChannelValues appearance = valuesOf(frame, element, Channel.APPEARANCE);
@@ -129,47 +155,21 @@ public final class OverlayRenderer {
 		return result;
 	}
 
-	/** The animated value if the channel has a track, otherwise the element's base value. */
+	/** A gizmo drag preview if there is one, then the animated value if the channel has a track, then the base value. */
 	public static ChannelValues valuesOf(KeyframeEvaluator.Frame frame, Element element, Channel channel) {
+		if (previewSource != null && !Flashback.isExporting()) {
+			ChannelValues preview = previewSource.preview(element.id, channel);
+			if (preview != null) {
+				return preview;
+			}
+		}
 		ChannelValues animated = frame.get(element.id, channel);
 		return animated != null ? animated : element.base(channel);
 	}
 
 	private static double distanceSq(Resolved resolved, Vec3 cameraPos) {
-		ChannelValues t = resolved.transform();
-		double dx = t.get(Channel.X) - cameraPos.x;
-		double dy = t.get(Channel.Y) - cameraPos.y;
-		double dz = t.get(Channel.Z) - cameraPos.z;
-		return dx * dx + dy * dy + dz * dz;
-	}
-
-	/** View-space matrix for a world element: camera-relative position, then facing, then the element's rotation and scale. */
-	private static Matrix4f worldRoot(Resolved resolved, CameraRenderState camera) {
-		Element element = resolved.element();
-		ChannelValues t = resolved.transform();
-		double dx = t.get(Channel.X) - camera.pos.x;
-		double dy = t.get(Channel.Y) - camera.pos.y;
-		double dz = t.get(Channel.Z) - camera.pos.z;
-
-		Matrix4f matrix = new Matrix4f(camera.viewRotationMatrix).translate((float) dx, (float) dy, (float) dz);
-		switch (element.facing) {
-			case FACE_CAMERA -> matrix.rotate(camera.orientation);
-			// The element's front (+Z) points at the camera, rotating around Y only.
-			case Y_AXIS -> matrix.rotateY((float) Math.atan2(-dx, -dz));
-			case FIXED -> {
-			}
-		}
-		matrix.rotate(rotation(t));
-		matrix.scale(t.getFloat(Channel.SCALE_X), t.getFloat(Channel.SCALE_Y), 1);
-		return matrix;
-	}
-
-	/** Element rotation: yaw around Y, then pitch around X, then roll around Z (degrees). */
-	public static Quaternionf rotation(ChannelValues transform) {
-		return new Quaternionf()
-			.rotateY((float) Math.toRadians(transform.get(Channel.YAW)))
-			.rotateX((float) Math.toRadians(transform.get(Channel.PITCH)))
-			.rotateZ((float) Math.toRadians(transform.get(Channel.ROLL)));
+		Vec3 position = ElementGeometry.worldPosition(resolved.element(), resolved.transform());
+		return position == null ? 0 : position.distanceToSqr(cameraPos);
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -201,6 +201,11 @@ public final class OverlayRenderer {
 
 	private static void drawImage(OverlayBatch batch, Resolved resolved, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
 		Element element = resolved.element();
+		ElementGeometry.Bounds bounds = ElementGeometry.localBounds(element, resolved.content(), unit);
+		if (bounds == null) {
+			return;
+		}
+
 		ImageTextures.Entry texture = replayId == null ? null : ImageTextures.get(replayId, element.assetId);
 		boolean missing = texture == null;
 		if (missing) {
@@ -208,21 +213,10 @@ public final class OverlayRenderer {
 		}
 
 		ChannelValues content = resolved.content();
-		float u0 = clamp01(content.getFloat(Channel.CROP_LEFT));
-		float v0 = clamp01(content.getFloat(Channel.CROP_TOP));
-		float u1 = clamp01(content.getFloat(Channel.CROP_RIGHT));
-		float v1 = clamp01(content.getFloat(Channel.CROP_BOTTOM));
-		if (u1 <= u0 || v1 <= v0) {
-			return;
-		}
-
-		float width = element.width * unit;
-		float height = element.height * unit;
-		// Cropping trims the quad but keeps the remaining pixels where they were.
-		float left = (u0 - element.pivotX) * width;
-		float right = (u1 - element.pivotX) * width;
-		float top = (element.pivotY - v0) * height;
-		float bottom = (element.pivotY - v1) * height;
+		float u0 = content.getFloat(Channel.CROP_LEFT);
+		float v0 = content.getFloat(Channel.CROP_TOP);
+		float u1 = content.getFloat(Channel.CROP_RIGHT);
+		float v1 = content.getFloat(Channel.CROP_BOTTOM);
 		if (missing) {
 			// Tile the checkerboard rather than stretching two pixels across the whole quad.
 			u0 = 0;
@@ -236,10 +230,10 @@ public final class OverlayRenderer {
 			? RenderSystem.getSamplerCache().getRepeat(FilterMode.NEAREST)
 			: RenderSystem.getSamplerCache().getClampToEdge(element.pixelated ? FilterMode.NEAREST : FilterMode.LINEAR);
 		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), texture.view(), sampler);
-		buffer.addVertex(root, left, top, 0).setUv(u0, v0).setColor(color);
-		buffer.addVertex(root, left, bottom, 0).setUv(u0, v1).setColor(color);
-		buffer.addVertex(root, right, bottom, 0).setUv(u1, v1).setColor(color);
-		buffer.addVertex(root, right, top, 0).setUv(u1, v0).setColor(color);
+		buffer.addVertex(root, bounds.minX(), bounds.maxY(), 0).setUv(u0, v0).setColor(color);
+		buffer.addVertex(root, bounds.minX(), bounds.minY(), 0).setUv(u0, v1).setColor(color);
+		buffer.addVertex(root, bounds.maxX(), bounds.minY(), 0).setUv(u1, v1).setColor(color);
+		buffer.addVertex(root, bounds.maxX(), bounds.maxY(), 0).setUv(u1, v0).setColor(color);
 	}
 
 	private static void drawText(OverlayBatch batch, Resolved resolved, Matrix4f root, float unit, boolean depthTest) {
@@ -248,40 +242,29 @@ public final class OverlayRenderer {
 		if (appearance.get(Channel.OPACITY) < MIN_TEXT_ALPHA) {
 			return;
 		}
-
-		String text = revealed(resolved.content());
-		if (text.isEmpty()) {
+		ElementGeometry.TextLayout layout = ElementGeometry.textLayout(element, resolved.content(), unit);
+		if (layout == null) {
 			return;
 		}
 
 		Font font = Minecraft.getInstance().font;
-		String[] lines = text.split("\n", -1);
-		int blockWidth = 0;
-		for (String line : lines) {
-			blockWidth = Math.max(blockWidth, font.width(line));
-		}
-		int blockHeight = lines.length * font.lineHeight;
-		if (blockWidth == 0) {
-			return;
-		}
-
-		// One font pixel in local units; fontSize is the height of one line.
-		float pixel = element.fontSize * unit / font.lineHeight;
+		float pixel = layout.pixel();
 		Matrix4f pose = new Matrix4f(root)
-			.translate(-element.pivotX * blockWidth * pixel, element.pivotY * blockHeight * pixel, 0)
+			.translate(-element.pivotX * layout.blockWidth() * pixel, element.pivotY * layout.blockHeight() * pixel, 0)
 			.scale(pixel, -pixel, pixel); // glyph y grows downwards
 
 		int color = color(appearance);
 		int background = scaleAlpha(element.backgroundColor, appearance.get(Channel.OPACITY));
 		GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 
+		String[] lines = layout.lines();
 		for (int i = 0; i < lines.length; i++) {
 			String line = lines[i];
 			int lineWidth = font.width(line);
 			float x = switch (element.align) {
 				case LEFT -> 0;
-				case CENTER -> (blockWidth - lineWidth) / 2f;
-				case RIGHT -> blockWidth - lineWidth;
+				case CENTER -> (layout.blockWidth() - lineWidth) / 2f;
+				case RIGHT -> layout.blockWidth() - lineWidth;
 			};
 			Font.PreparedText prepared = font.prepareText(line, x, i * font.lineHeight, color, element.textShadow, background);
 			prepared.visit(new Font.GlyphVisitor() {
@@ -298,37 +281,8 @@ public final class OverlayRenderer {
 		}
 	}
 
-	/** The part of the text shown by the reveal fraction, counting code points (newlines don't count). */
-	static String revealed(ChannelValues content) {
-		String text = content.text == null ? "" : content.text;
-		double reveal = content.get(Channel.REVEAL);
-		if (reveal >= 1) {
-			return text;
-		}
-		if (reveal <= 0) {
-			return "";
-		}
-		int visible = (int) text.codePoints().filter(c -> c != '\n').count();
-		int shown = (int) Math.floor(visible * reveal);
-		StringBuilder builder = new StringBuilder();
-		int count = 0;
-		for (int i = 0; i < text.length() && count < shown; ) {
-			int codePoint = text.codePointAt(i);
-			builder.appendCodePoint(codePoint);
-			if (codePoint != '\n') {
-				count++;
-			}
-			i += Character.charCount(codePoint);
-		}
-		return builder.toString();
-	}
-
 	private static int scaleAlpha(int argb, double opacity) {
 		int alpha = (int) Math.round(((argb >>> 24) & 0xFF) * Math.max(0, Math.min(1, opacity)));
 		return alpha << 24 | (argb & 0xFFFFFF);
-	}
-
-	private static float clamp01(float value) {
-		return Math.max(0, Math.min(1, value));
 	}
 }

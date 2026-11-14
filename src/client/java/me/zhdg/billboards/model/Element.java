@@ -27,6 +27,15 @@ public class Element {
 	/** Hidden in the editor and in exports, without touching keyframes. */
 	public boolean hidden = false;
 
+	// --- Entity attachment (world only) ---
+	/** When set, the transform position is an offset from this entity's anchor instead of a world position. */
+	public @Nullable UUID attachEntity = null;
+	/** Shown in the editor when the entity isn't loaded; not used to find the entity. */
+	public @Nullable String attachEntityName = null;
+	public AttachAnchor attachAnchor = AttachAnchor.ABOVE_HEAD;
+	/** Turn the offset (and a fixed-facing element) with the entity's body rotation. */
+	public boolean attachRotate = false;
+
 	// --- Size ---
 	/** World: blocks. Screen: fraction of the frame height. For text this is ignored; see {@link #fontSize}. */
 	public float width = 1.0f;
@@ -73,6 +82,7 @@ public class Element {
 		if (this.space == null) this.space = Space.WORLD;
 		if (this.facing == null) this.facing = Facing.FIXED;
 		if (this.align == null) this.align = TextAlign.CENTER;
+		if (this.attachAnchor == null) this.attachAnchor = AttachAnchor.ABOVE_HEAD;
 		if (this.transform == null) this.transform = new ChannelValues(Channel.TRANSFORM);
 		if (this.appearance == null) this.appearance = new ChannelValues(Channel.APPEARANCE);
 		if (this.content == null) this.content = new ChannelValues(Channel.CONTENT);
@@ -91,6 +101,10 @@ public class Element {
 		copy.pivotY = this.pivotY;
 		copy.layer = this.layer;
 		copy.hidden = this.hidden;
+		copy.attachEntity = this.attachEntity;
+		copy.attachEntityName = this.attachEntityName;
+		copy.attachAnchor = this.attachAnchor;
+		copy.attachRotate = this.attachRotate;
 		copy.width = this.width;
 		copy.height = this.height;
 		copy.assetId = this.assetId;

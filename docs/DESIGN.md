@@ -10,7 +10,7 @@ Overlays render straight into Flashback's export, so they need no video editing 
 | Package | `me.zhdg.billboards` |
 | Target | Minecraft 26.3, Fabric, Flashback 0.43.x (built against 0.43.6) |
 | Java | 25 |
-| Status | Approved. Milestone 1 implemented. |
+| Status | Approved. Milestones 1 and 2 implemented. |
 
 ---
 
@@ -236,8 +236,12 @@ All in ImGui, inside Flashback's editor:
   - **Inspector:** fields for the selected element with ◆ keyframe buttons. A ◆ is filled when the cursor sits on a
     keyframe and hollow when it doesn't.
 - **Viewport gizmos (ImGuizmo):** click to select (ray-pick world quads, rect-hit screen elements), then translate /
-  rotate / scale with `W`/`E`/`R`, local/world toggle, and snapping with `Ctrl`. With **auto-key** on, finishing a
-  gizmo drag writes a keyframe at the cursor.
+  rotate / scale with `W`/`E`/`R`, a local/world axes toggle and a snap toggle. The gizmo runs inside Flashback's
+  game-frame window (so ImGuizmo sees it as hovered), and a mixin on `ReplayUI.handleBasicInputs` stops Flashback
+  grabbing the mouse for camera look when the click belongs to Billboards. Drags preview live and are written once
+  on release: to the base value, or to a keyframe at the cursor when the channel is animated or **auto-key** is on.
+  ImGuizmo gets a standard OpenGL projection rebuilt from Minecraft's (which uses reversed Z). Camera-facing world
+  elements only allow roll in the rotate gizmo.
 - **File picker:** Flashback's existing native dialog helper (or TinyFD from LWJGL) with image/video/font filters.
   Picked files are hashed and copied into `assets/`.
 

@@ -18,7 +18,15 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
      timeline cursor; a track named `<overlay> · <channel>` appears on Flashback's timeline. From then on, editing a
      value adds or updates a keyframe at the cursor. Keyframes work like any other Flashback keyframe: drag them,
      change their interpolation, copy/paste them, undo/redo.
-4. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
+4. **In the viewport**, click an overlay to select it and drag its gizmo. **W** / **E** / **R** (or the toolbar in the
+   Billboards window) switch between move, rotate and scale. Options: *Local axes* (move and rotate along the overlay's
+   own axes), *Snap* (0.25 blocks / 1% of the frame, 15°, 0.1 scale) and *Auto-key* (edits on a channel that isn't
+   animated yet start animating it instead of changing its base value). A drag on an animated channel writes one
+   keyframe at the cursor when you let go, so it's one undo step.
+5. **Attach to an entity** (world overlays, under *Settings*): pick a nearby player or mob and the overlay follows it.
+   Its position becomes an offset from an anchor (feet, centre, eyes or above the head), optionally turning with the
+   entity. Attach a camera-facing text overlay with the *Above head* anchor for a custom name tag.
+6. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
 
 | Channel | Values |
 |---|---|
@@ -37,9 +45,9 @@ original file doesn't break the replay.
 
 ## Status
 
-Milestone 1 of the [design](docs/DESIGN.md): images and text in world and screen space with keyframed transform,
-appearance and content. Viewport gizmos, entity attachment, shapes, custom fonts, GIF/video, groups, blend modes,
-effects and presets are planned for later milestones.
+Milestones 1 and 2 of the [design](docs/DESIGN.md): images and text in world and screen space with keyframed
+transform, appearance and content; viewport selection, move/rotate/scale gizmos and entity attachment. Shapes,
+custom fonts, GIF/video, groups, blend modes, effects and presets are planned for later milestones.
 
 ## Building
 
@@ -52,7 +60,9 @@ effects and presets are planned for later milestones.
 
 ```sh
 ./gradlew runClientGameTest   # records a replay with Flashback, opens it, adds overlays with keyframes and checks
-                              # interpolation, screenshots at several ticks and saving/loading of keyframes
+                              # interpolation, screenshots at several ticks, saving/loading of keyframes, viewport
+                              # picking, gizmo maths and entity attachment; with xdotool installed it also clicks and
+                              # drags gizmos with the real mouse and saves full-window screenshots
 ./gradlew runExportCheck      # then: opens that replay and runs two real Flashback exports (a PNG sequence like a
                               # video export, and a "No GUI" screenshot) and checks the overlays in the output
 ```
