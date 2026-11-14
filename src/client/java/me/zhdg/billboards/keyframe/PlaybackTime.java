@@ -25,7 +25,7 @@ public record PlaybackTime(EditorState editorState, float tick) {
 			// "Export screenshot" copies the editor state without keyframes (so the camera stays put). Overlays should
 			// still show their animated values, so fall back to the live editor state for the same replay.
 			if (!KeyframeEvaluator.hasBillboardTracks(exportState)) {
-				EditorState live = EditorStateManager.getCurrent();
+				EditorState live = liveEditorState();
 				if (live != null) {
 					exportState = live;
 				}
@@ -37,11 +37,23 @@ public record PlaybackTime(EditorState editorState, float tick) {
 		if (replayServer == null) {
 			return null;
 		}
-		EditorState editorState = EditorStateManager.getCurrent();
+		EditorState editorState = liveEditorState();
 		if (editorState == null) {
 			return null;
 		}
 		return new PlaybackTime(editorState, (float) replayServer.getPartialReplayTick());
+	}
+
+	/**
+	 * The editor state of the open replay, loading it if needed. Unlike {@code EditorStateManager.getCurrent()}, this
+	 * is never null just because Flashback hasn't loaded it yet, and never the export job's copy.
+	 */
+	public static @Nullable EditorState liveEditorState() {
+		ReplayServer replayServer = Flashback.getReplayServer();
+		if (replayServer == null) {
+			return null;
+		}
+		return EditorStateManager.get(replayServer.getMetadata().replayIdentifier);
 	}
 
 	/** The whole tick the editor's cursor is on, used when adding keyframes. -1 outside a replay. */

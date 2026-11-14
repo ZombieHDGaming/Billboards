@@ -9,7 +9,6 @@ import com.moulberry.flashback.keyframe.Keyframe;
 import com.moulberry.flashback.playback.ReplayServer;
 import com.moulberry.flashback.state.EditorScene;
 import com.moulberry.flashback.state.EditorState;
-import com.moulberry.flashback.state.EditorStateManager;
 import com.moulberry.flashback.state.KeyframeTrack;
 import me.zhdg.billboards.editor.BillboardsWindow;
 import me.zhdg.billboards.keyframe.ChannelKeyframe;
@@ -61,7 +60,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		context.runOnClient(minecraft -> Flashback.openReplayWorld(replay));
 		context.waitFor(minecraft -> Flashback.getReplayServer() != null && minecraft.level != null && minecraft.player != null
-			&& EditorStateManager.getCurrent() != null, 20 * 120);
+			&& PlaybackTime.liveEditorState() != null, 20 * 120);
 		context.waitTicks(100); // let the editor UI, chunks and snapshot processing settle
 
 		Path images;
@@ -132,7 +131,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 	private static void setUpOverlays(Minecraft minecraft, Path screenImage, Path worldImage) throws IOException {
 		BillboardProject project = ProjectManager.getCurrent();
 		UUID replayId = ProjectManager.currentReplayId();
-		EditorState editorState = EditorStateManager.getCurrent();
+		EditorState editorState = PlaybackTime.liveEditorState();
 		check(project != null && replayId != null && editorState != null, "replay should be open");
 
 		Flashback.getConfig().internal.openedWindows.add(BillboardsWindow.WINDOW_ID);
@@ -214,7 +213,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 	}
 
 	private static void checkKeyframesSurviveSerialization(Minecraft minecraft) {
-		EditorState editorState = EditorStateManager.getCurrent();
+		EditorState editorState = PlaybackTime.liveEditorState();
 		EditorState copy = editorState.copy(); // round-trips through Flashback's Gson, including our TypeAdapter mixin
 		long stamp = copy.acquireRead();
 		try {
@@ -237,7 +236,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 	private static void checkExport(ClientGameTestContext context, Path output) {
 		context.runOnClient(minecraft -> {
 			ReplayServer replayServer = Flashback.getReplayServer();
-			EditorState editorState = EditorStateManager.getCurrent();
+			EditorState editorState = PlaybackTime.liveEditorState();
 			var player = minecraft.player;
 			VideoCodec codec = VideoContainer.PNG_SEQUENCE.getSupportedVideoCodecs(false)[0];
 			// Same settings as Flashback's "Export screenshot", with "No GUI" on.

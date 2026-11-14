@@ -4,7 +4,6 @@ import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.configuration.FlashbackConfigV1;
 import com.moulberry.flashback.editor.ui.ImGuiHelper;
 import com.moulberry.flashback.state.EditorState;
-import com.moulberry.flashback.state.EditorStateManager;
 import com.moulberry.flashback.utils.AsyncFileDialogs;
 import imgui.moulberry90.ImGui;
 import imgui.moulberry90.flag.ImGuiCond;
@@ -88,7 +87,7 @@ public final class BillboardsWindow {
 		}
 		BillboardProject project = ProjectManager.getCurrent();
 		UUID replayId = ProjectManager.currentReplayId();
-		EditorState editorState = EditorStateManager.getCurrent();
+		EditorState editorState = PlaybackTime.liveEditorState();
 		if (project == null || replayId == null || editorState == null) {
 			return;
 		}
