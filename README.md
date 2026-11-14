@@ -35,7 +35,11 @@ timeline. Overlays render straight into Flashback's exports, so there is no vide
    inside, or use *Move into group* / *Move out of group* / *Ungroup* in the list's right-click menu (elements stay where
    they are on screen). Clicking a group's contents in the viewport selects that piece; select the group itself in the
    list.
-9. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
+9. **Animated images and videos**: animated GIFs and PNGs added with *Add image...* play automatically; *Add video...*
+   takes MP4, MOV, MKV, WebM and more. They play in sync with the replay (following its speed), starting at a chosen
+   tick, at a chosen speed, looping or holding the last frame. Exports get exactly the right frame for every exported
+   frame. Video sound isn't included.
+10. Export as usual. Overlays are included in videos and screenshots, including with **No GUI** enabled.
 
 | Channel | Values |
 |---|---|
@@ -54,9 +58,9 @@ original file doesn't break the replay.
 
 ## Status
 
-Milestones 1-3 of the [design](docs/DESIGN.md): images, text, shapes and groups in world and screen space with
-keyframed transform, appearance and content; custom fonts; viewport selection, move/rotate/scale gizmos and entity
-attachment. GIF/video, blend modes, effects and presets are planned for later milestones.
+Milestones 1-4 of the [design](docs/DESIGN.md): images, text, shapes, groups, animated GIFs/PNGs and videos in world
+and screen space with keyframed transform, appearance and content; custom fonts; viewport selection,
+move/rotate/scale gizmos and entity attachment. Blend modes, effects and presets are planned for the last milestone.
 
 ## Building
 
@@ -70,8 +74,9 @@ attachment. GIF/video, blend modes, effects and presets are planned for later mi
 ```sh
 ./gradlew runClientGameTest   # records a replay with Flashback, opens it, adds overlays with keyframes and checks
                               # interpolation, screenshots at several ticks, saving/loading of keyframes, viewport
-                              # picking, gizmo maths, entity attachment and a lower third (group + shape + TTF text)
-                              # sliding in; with xdotool installed it also clicks and
+                              # picking, gizmo maths, entity attachment, a lower third (group + shape + TTF text)
+                              # sliding in, and a GIF, APNG and video playing in sync; with xdotool installed it also
+                              # clicks and
                               # drags gizmos with the real mouse and saves full-window screenshots
 ./gradlew runExportCheck      # then: opens that replay and runs two real Flashback exports (a PNG sequence like a
                               # video export, and a "No GUI" screenshot) and checks the overlays in the output

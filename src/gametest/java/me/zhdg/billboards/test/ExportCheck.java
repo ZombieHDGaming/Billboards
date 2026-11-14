@@ -138,6 +138,21 @@ public class ExportCheck implements ClientModInitializer {
 		Files.copy(frames.getFirst(), copy.resolve("export-first-frame.png"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 		Files.copy(frames.getLast(), copy.resolve("export-last-frame.png"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 		Files.copy(this.outputDir.resolve("screenshot.png"), copy.resolve("export-screenshot.png"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		// Animated media: frame i of the export is replay tick i (20 fps from tick 0).
+		// {frame, GIF colour, video colour, APNG colour}
+		int[][] media = {
+			{5, 0x00FF80, 0x0000FF, 0xFF0080}, {15, 0x8000FF, 0x0000FF, 0x80FF00},
+			{25, 0x00FF80, 0xFFFF00, 0xFF0080}, {35, 0x8000FF, 0xFFFF00, 0x80FF00}};
+		for (int[] expectation : media) {
+			Path frame = frames.get(expectation[0]);
+			long gif = countPixels(frame, expectation[1]);
+			long video = countPixels(frame, expectation[2]);
+			long apng = countPixels(frame, expectation[3]);
+			log("Exported frame " + expectation[0] + ": GIF " + gif + ", video " + video + ", APNG " + apng + " pixels of the expected frame");
+			if (gif < 100 || video < 100 || apng < 100) {
+				throw new AssertionError("animated media should show the right frame in exported frame " + expectation[0]);
+			}
+		}
 		log("All export checks passed");
 	}
 

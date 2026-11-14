@@ -5,7 +5,9 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuSampler;
 import com.moulberry.flashback.Flashback;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import me.zhdg.billboards.keyframe.KeyframeEvaluator;
+import me.zhdg.billboards.keyframe.PlaybackTime;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
@@ -157,7 +159,7 @@ public final class OverlayRenderer {
 	 */
 	private static void drawElement(OverlayBatch batch, SceneFrame.Node node, Matrix4f root, float unit, boolean depthTest, @Nullable UUID replayId) {
 		switch (node.element().type) {
-			case IMAGE -> drawImage(batch, node, root, unit, depthTest, replayId);
+			case IMAGE, VIDEO -> drawImage(batch, node, root, unit, depthTest, replayId);
 			case TEXT -> drawText(batch, node, root, unit, depthTest);
 			case SHAPE -> drawShape(batch, node, root, unit, depthTest);
 			case GROUP -> {
@@ -188,10 +190,19 @@ public final class OverlayRenderer {
 			return;
 		}
 
-		ImageTextures.Entry texture = replayId == null ? null : ImageTextures.get(replayId, element.assetId);
-		boolean missing = texture == null;
+		GpuTextureView view = null;
+		if (replayId != null) {
+			if (MediaPlayers.isPlayed(replayId, element)) {
+				PlaybackTime time = PlaybackTime.current();
+				view = time == null ? null : MediaPlayers.frame(replayId, element, time.tick());
+			} else {
+				ImageTextures.Entry texture = ImageTextures.get(replayId, element.assetId);
+				view = texture == null ? null : texture.view();
+			}
+		}
+		boolean missing = view == null;
 		if (missing) {
-			texture = ImageTextures.placeholder();
+			view = ImageTextures.placeholder().view();
 		}
 
 		ChannelValues content = node.content();
@@ -211,7 +222,7 @@ public final class OverlayRenderer {
 		GpuSampler sampler = missing
 			? RenderSystem.getSamplerCache().getRepeat(FilterMode.NEAREST)
 			: sampler(element.pixelated ? FilterMode.NEAREST : FilterMode.LINEAR);
-		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), texture.view(), sampler);
+		VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, false), view, sampler);
 		buffer.addVertex(root, bounds.minX(), bounds.maxY(), 0).setUv(u0, v0).setColor(color);
 		buffer.addVertex(root, bounds.minX(), bounds.minY(), 0).setUv(u0, v1).setColor(color);
 		buffer.addVertex(root, bounds.maxX(), bounds.minY(), 0).setUv(u1, v1).setColor(color);

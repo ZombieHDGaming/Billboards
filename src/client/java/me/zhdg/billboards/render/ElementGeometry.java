@@ -53,8 +53,8 @@ public final class ElementGeometry {
 		if (element.type == ElementType.GROUP) {
 			return null;
 		}
-		if (element.type == ElementType.IMAGE || element.type == ElementType.SHAPE) {
-			boolean crop = element.type == ElementType.IMAGE;
+		if (element.type.isPicture() || element.type == ElementType.SHAPE) {
+			boolean crop = element.type.isPicture();
 			float u0 = crop ? clamp01(content.getFloat(Channel.CROP_LEFT)) : 0;
 			float v0 = crop ? clamp01(content.getFloat(Channel.CROP_TOP)) : 0;
 			float u1 = crop ? clamp01(content.getFloat(Channel.CROP_RIGHT)) : 1;

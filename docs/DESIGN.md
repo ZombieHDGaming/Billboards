@@ -10,7 +10,7 @@ Overlays render straight into Flashback's export, so they need no video editing 
 | Package | `me.zhdg.billboards` |
 | Target | Minecraft 26.3, Fabric, Flashback 0.43.x (built against 0.43.6) |
 | Java | 25 |
-| Status | Approved. Milestones 1-3 implemented. |
+| Status | Approved. Milestones 1-4 implemented. |
 
 ---
 
@@ -209,8 +209,8 @@ fades pop. Depth-tested overlays test against the world but don't write depth, s
 | Element | Approach |
 |---|---|
 | Image | Upload to a `DynamicTexture`; mipmaps + linear filtering by default ("pixelated" option for pixel art) |
-| GIF / APNG | Decode all frames once (ImageIO for GIF; APNG via a small decoder), pack into a texture array/atlas, and pick the frame from replay time |
-| Video | `FFmpegFrameGrabber` from Flashback's JavaCV. **Editor:** async decode thread with a small frame cache, seeking on scrub. **Export:** synchronous, frame-exact decode for each exported frame's timestamp, so output is deterministic. Audio is not mixed in v1 |
+| GIF / APNG | Played through the same FFmpeg player as videos (FFmpeg composites GIF/APNG frames correctly). `.png` files with an `acTL` chunk are opened with the `apng` demuxer; when the demuxer doesn't know the length (APNG), it is worked out from the frame timestamps once, so looping works |
+| Video | `FFmpegFrameGrabber` from Flashback's JavaCV, one player per element, RGBA frames copied straight into a `NativeImage`. Always shows the latest frame at or before the requested time, decoding forwards and seeking (to the keyframe before, never discarding past the target) when going backwards or more than 2 s ahead. Decoding is synchronous in the editor too, which keeps editor and export identical; an async decoder for smoother scrubbing of long, high-resolution videos is a possible later improvement. Audio is not mixed |
 | Text (Minecraft) | Vanilla `Font` rendering (resource-pack fonts work), into world or screen pose |
 | Text (TTF/OTF) | Rasterize glyphs with **Java's font engine** (AWT, works headless) at 64 px into a 1024² atlas, on demand, drawn with linear filtering. Independent of Minecraft's font internals |
 | Shapes | CPU-tessellated meshes (rounded rects, ellipses, arrows), solid or 2-stop gradient fill + stroke |

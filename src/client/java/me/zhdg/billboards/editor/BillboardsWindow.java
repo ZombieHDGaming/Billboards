@@ -31,6 +31,8 @@ import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.CustomFont;
 import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.ImageTextures;
+import me.zhdg.billboards.render.MediaPlayer;
+import me.zhdg.billboards.render.MediaPlayers;
 import me.zhdg.billboards.render.SceneFrame;
 import me.zhdg.billboards.render.OverlayRenderer;
 import net.fabricmc.loader.api.FabricLoader;
@@ -58,6 +60,7 @@ public final class BillboardsWindow {
 	public static final String WINDOW_ID = "billboards";
 	private static final String[] IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp"};
 	private static final String[] FONT_EXTENSIONS = {"ttf", "otf"};
+	private static final String[] VIDEO_EXTENSIONS = {"mp4", "mov", "mkv", "webm", "avi", "m4v", "gif"};
 
 	private static final ImBoolean OPEN = new ImBoolean(true);
 	private static @Nullable UUID nameBufferOwner = null;
@@ -138,6 +141,11 @@ public final class BillboardsWindow {
 		if (ImGui.button("Add image...")) {
 			ImGui.openPopup("##billboards_add_image");
 		}
+		sameLineIfFits("Add video...");
+		if (ImGui.button("Add video...")) {
+			ImGui.openPopup("##billboards_add_video");
+		}
+		ImGuiHelper.tooltip("A video file (MP4, MOV, MKV, WebM...) that plays in sync with the replay. Animated GIFs and PNGs can be added as images.");
 		sameLineIfFits("Add text");
 		if (ImGui.button("Add text")) {
 			ImGui.openPopup("##billboards_add_text");
@@ -154,10 +162,19 @@ public final class BillboardsWindow {
 
 		if (ImGui.beginPopup("##billboards_add_image")) {
 			if (ImGui.menuItem("In the world")) {
-				pickImage(replayId, path -> addImage(project, replayId, path, Space.WORLD));
+				pickImage(replayId, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.IMAGE));
 			}
 			if (ImGui.menuItem("On screen")) {
-				pickImage(replayId, path -> addImage(project, replayId, path, Space.SCREEN));
+				pickImage(replayId, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.IMAGE));
+			}
+			ImGui.endPopup();
+		}
+		if (ImGui.beginPopup("##billboards_add_video")) {
+			if (ImGui.menuItem("In the world")) {
+				pickFile(replayId, "Videos", VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.WORLD, ElementType.VIDEO));
+			}
+			if (ImGui.menuItem("On screen")) {
+				pickFile(replayId, "Videos", VIDEO_EXTENSIONS, path -> addPicture(project, replayId, path, Space.SCREEN, ElementType.VIDEO));
 			}
 			ImGui.endPopup();
 		}
@@ -460,12 +477,14 @@ public final class BillboardsWindow {
 		}
 
 		String unit = element.space == Space.WORLD ? "blocks" : "of frame height";
-		if (element.type == ElementType.IMAGE) {
+		if (element.type.isPicture()) {
+			boolean video = element.type == ElementType.VIDEO;
 			String fileName = element.assetId == null ? "(none)" : project.assets.getOrDefault(element.assetId, element.assetId);
-			ImGui.text("Image: " + fileName);
+			ImGui.text((video ? "Video: " : "Image: ") + fileName);
 			ImGui.sameLine();
 			if (ImGui.smallButton("Replace...")) {
-				pickImage(replayId, path -> replaceImage(project, replayId, element, path));
+				pickFile(replayId, video ? "Videos" : "Images", video ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS,
+					path -> replaceImage(project, replayId, element, path));
 			}
 			float[] size = {element.width, element.height};
 			if (ImGui.dragFloat2("Size (" + unit + ")", size, 0.01f, 0.001f, 10000f, "%.3f")) {
@@ -478,6 +497,9 @@ public final class BillboardsWindow {
 				changed = true;
 			}
 			ImGuiHelper.tooltip("Use nearest-neighbour filtering, for pixel art");
+			if (MediaPlayers.isPlayed(replayId, element)) {
+				changed |= renderPlaybackSettings(replayId, element);
+			}
 		} else if (element.type == ElementType.SHAPE) {
 			changed |= renderShapeSettings(element, unit);
 		} else if (element.type == ElementType.TEXT) {
@@ -661,6 +683,41 @@ public final class BillboardsWindow {
 	// Creating elements
 	// ------------------------------------------------------------------------------------------------
 
+	/** Timing of an animated image or a video. Returns true if anything changed. */
+	private static boolean renderPlaybackSettings(UUID replayId, Element element) {
+		boolean changed = false;
+		MediaPlayer player = MediaPlayers.player(replayId, element);
+		if (player != null) {
+			MediaPlayer.Info info = player.info();
+			ImGui.textDisabled(String.format(java.util.Locale.ROOT, "%dx%d, %.2f s at %.1f fps", info.width(), info.height(), info.durationSeconds(), info.frameRate()));
+		} else {
+			ImGui.textDisabled("Can't be played; see the log");
+		}
+		int[] start = {element.mediaStartTick};
+		if (ImGuiHelper.inputInt("Starts at tick", start)) {
+			element.mediaStartTick = Math.max(0, start[0]);
+			changed = true;
+		}
+		ImGuiHelper.tooltip("Replay tick at which it starts playing; before that it shows its first frame");
+		ImGui.sameLine();
+		if (ImGui.smallButton("Cursor")) {
+			element.mediaStartTick = Math.max(0, PlaybackTime.cursorTick());
+			changed = true;
+		}
+		ImGuiHelper.tooltip("Start playing at the timeline cursor");
+		float[] speed = {element.mediaSpeed};
+		if (ImGui.dragFloat("Speed", speed, 0.01f, 0.01f, 100f, "%.2fx")) {
+			element.mediaSpeed = Math.max(0.01f, speed[0]);
+			changed = true;
+		}
+		if (ImGui.checkbox("Loop", element.mediaLoop)) {
+			element.mediaLoop = !element.mediaLoop;
+			changed = true;
+		}
+		ImGuiHelper.tooltip("Start again after the end instead of holding the last frame");
+		return changed;
+	}
+
 	private static boolean renderShapeSettings(Element element, String unit) {
 		boolean changed = false;
 		ShapeKind kind = enumCombo("Shape", element.shapeKind, ShapeKind.values(), k -> k.displayName);
@@ -776,15 +833,17 @@ public final class BillboardsWindow {
 		add(project, element);
 	}
 
-	private static void addImage(BillboardProject project, UUID replayId, Path path, Space space) {
+	private static void addPicture(BillboardProject project, UUID replayId, Path path, Space space, ElementType type) {
 		Element element = new Element();
-		element.type = ElementType.IMAGE;
+		element.type = type;
+		element.mediaStartTick = Math.max(0, PlaybackTime.cursorTick());
+		element.mediaLoop = type == ElementType.IMAGE;
 		element.space = space;
 		element.name = stripExtension(path.getFileName().toString());
 		if (!importInto(project, replayId, element, path)) {
 			return;
 		}
-		float aspect = aspect(path);
+		float aspect = aspect(path, type);
 		if (space == Space.WORLD) {
 			element.width = 2.0f;
 			element.height = 2.0f / aspect;
@@ -798,7 +857,7 @@ public final class BillboardsWindow {
 
 	private static void replaceImage(BillboardProject project, UUID replayId, Element element, Path path) {
 		if (importInto(project, replayId, element, path)) {
-			element.height = element.width / aspect(path);
+			element.height = element.width / aspect(path, element.type);
 			project.markDirty();
 		}
 	}
@@ -807,6 +866,7 @@ public final class BillboardsWindow {
 		try {
 			element.assetId = AssetStore.importFile(replayId, project, path);
 			ImageTextures.retry(element.assetId);
+			MediaPlayers.retry(element.assetId);
 			return true;
 		} catch (Exception e) {
 			Billboards.LOGGER.error("Unable to import {}", path, e);
@@ -889,7 +949,15 @@ public final class BillboardsWindow {
 		}
 	}
 
-	private static float aspect(Path path) {
+	private static float aspect(Path path, ElementType type) {
+		if (type == ElementType.VIDEO || MediaPlayer.isAnimatedImage(path)) {
+			try {
+				MediaPlayer.Info info = MediaPlayer.probe(path);
+				return info.width() > 0 && info.height() > 0 ? info.width() / (float) info.height() : 1.0f;
+			} catch (Exception e) {
+				return 16 / 9f;
+			}
+		}
 		int[] size = ImageTextures.readSize(path);
 		if (size == null || size[0] <= 0 || size[1] <= 0) {
 			return 1.0f;

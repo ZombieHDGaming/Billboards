@@ -48,6 +48,14 @@ public class Element {
 	public @Nullable String assetId = null;
 	public boolean pixelated = false;
 
+	// --- Animated images (GIF/APNG) and videos ---
+	/** Replay tick at which playback starts (the media's first frame shows before it). */
+	public int mediaStartTick = 0;
+	/** Playback speed; 1 plays at the media's own speed when the replay runs at normal speed. */
+	public float mediaSpeed = 1;
+	/** Start again from the beginning after the end, instead of holding the last frame. */
+	public boolean mediaLoop = true;
+
 	// --- Text ---
 	/** Height of one line of text. World: blocks. Screen: fraction of the frame height. */
 	public float fontSize = 0.25f;
@@ -136,6 +144,9 @@ public class Element {
 		copy.textShadow = this.textShadow;
 		copy.backgroundColor = this.backgroundColor;
 		copy.parentId = this.parentId;
+		copy.mediaStartTick = this.mediaStartTick;
+		copy.mediaSpeed = this.mediaSpeed;
+		copy.mediaLoop = this.mediaLoop;
 		copy.fontAssetId = this.fontAssetId;
 		copy.shapeKind = this.shapeKind;
 		copy.fillColor = this.fillColor;
