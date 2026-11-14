@@ -289,7 +289,10 @@ public final class OverlayRenderer {
 				public void acceptRenderable(TextRenderable renderable) {
 					boolean grayscale = renderable.guiPipeline() == RenderPipelines.GUI_TEXT_GRAYSCALE;
 					VertexConsumer buffer = batch.begin(OverlayPipelines.get(depthTest, grayscale), renderable.textureView(), sampler);
-					renderable.render(pose, buffer, LightCoordsUtil.FULL_BRIGHT, false);
+					// "Flat": no z offsets between shadow, glyph and background. Vanilla relies on depth testing to
+					// keep the glyph above its shadow; overlays are drawn strictly in order instead, and the offsets
+					// would push glyphs out of the screen pass's depth range.
+					renderable.render(pose, buffer, LightCoordsUtil.FULL_BRIGHT, true);
 				}
 			});
 		}

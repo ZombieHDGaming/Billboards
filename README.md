@@ -46,8 +46,25 @@ effects and presets are planned for later milestones.
 ```sh
 ./gradlew build               # needs JDK 25
 ./gradlew runClient           # dev client with Flashback
-./gradlew runClientGameTest   # end-to-end test: records a replay, adds overlays, checks screenshots and an export
-                              # (on a headless machine: xvfb-run -a ./gradlew runClientGameTest)
+```
+
+### Tests
+
+```sh
+./gradlew runClientGameTest   # records a replay with Flashback, opens it, adds overlays with keyframes and checks
+                              # interpolation, screenshots at several ticks and saving/loading of keyframes
+./gradlew runExportCheck      # then: opens that replay and runs two real Flashback exports (a PNG sequence like a
+                              # video export, and a "No GUI" screenshot) and checks the overlays in the output
+```
+
+Exports are checked separately because they can't run inside Fabric's client gametest (it ticks the server in
+lock-step with the client, while an export blocks the client until the server catches up).
+
+On a headless Linux machine, run them under Xvfb with GLX enabled. Xvfb has no sRGB-capable visuals, so
+`BILLBOARDS_NO_SRGB=1` tells the test mod to stop Minecraft from asking for one:
+
+```sh
+BILLBOARDS_NO_SRGB=1 xvfb-run -a -s "-screen 0 1280x720x24 +extension GLX +render" ./gradlew runClientGameTest
 ```
 
 Flashback is "all rights reserved", so it is a compile-only dependency fetched from Modrinth's Maven and is never

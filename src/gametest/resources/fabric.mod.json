@@ -7,6 +7,9 @@
 	"entrypoints": {
 		"fabric-client-gametest": [
 			"me.zhdg.billboards.test.BillboardsClientGameTest"
+		],
+		"client": [
+			"me.zhdg.billboards.test.ExportCheck"
 		]
 	},
 	"depends": {

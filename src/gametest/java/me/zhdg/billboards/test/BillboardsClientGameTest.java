@@ -1,10 +1,6 @@
 package me.zhdg.billboards.test;
 
 import com.moulberry.flashback.Flashback;
-import com.moulberry.flashback.combo_options.VideoContainer;
-import com.moulberry.flashback.combo_options.VideoCodec;
-import com.moulberry.flashback.exporting.ExportJob;
-import com.moulberry.flashback.exporting.ExportSettings;
 import com.moulberry.flashback.keyframe.Keyframe;
 import com.moulberry.flashback.playback.ReplayServer;
 import com.moulberry.flashback.state.EditorScene;
@@ -91,7 +87,12 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		check(atMiddle == 0, "screen image should be half-transparent (blended, not pure green) at tick 20");
 		check(atEnd > 500, "screen image should be fully visible at tick 40");
 
-		long worldPixels = countPixels(screenshotAt(context, 60, "billboards-tick-60"), WORLD_IMAGE_RGB);
+		BufferedImage tick60 = screenshotAt(context, 60, "billboards-tick-60");
+		long titlePixels = countPixels(tick60, 0xFFFFFF);
+		log("White title text pixels: " + titlePixels);
+		check(titlePixels > 100, "title text should be drawn in white on top of its shadow");
+
+		long worldPixels = countPixels(tick60, WORLD_IMAGE_RGB);
 		log("World image pixels at tick 60: " + worldPixels);
 		check(worldPixels > 500, "world image should be visible");
 
@@ -102,8 +103,29 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 			check(Files.exists(ProjectManager.projectDirectory(replayId).resolve("project.json")), "project.json should be saved");
 		});
 
-		checkExport(context, images.resolve("export.png"));
+		checkHiddenHud(context);
 		log("All Billboards checks passed");
+
+		// Leave the replay (on Minecraft's own task loop, for the same reason as opening it) so the test ends cleanly.
+		context.runOnClient(minecraft -> minecraft.schedule(() -> {
+			if (minecraft.level != null) {
+				minecraft.level.disconnect(net.minecraft.network.chat.Component.empty());
+			}
+			minecraft.disconnectWithProgressScreen();
+		}));
+		context.waitFor(minecraft -> minecraft.getSingleplayerServer() == null && minecraft.level == null, 20 * 60);
+		context.waitFor(minecraft -> !net.fabricmc.fabric.impl.client.gametest.threading.ThreadingImpl.isServerRunning, 20 * 60);
+
+		// Hand the saved replay, editor state and Billboards project to the export check (./gradlew runExportCheck),
+		// which runs in its own directory because Loom clears this one.
+		context.waitFor(minecraft -> Files.isDirectory(Flashback.getDataDirectory().resolve("editor_states")), 20 * 60);
+		context.runOnClient(minecraft -> copyTree(Flashback.getDataDirectory(),
+			minecraft.gameDirectory.toPath().resolve("../exportCheck/flashback").normalize()));
+
+		// Leaving a world briefly shows progress screens; end on the title screen once they're done.
+		context.waitTicks(20);
+		context.setScreen(net.minecraft.client.gui.screens.TitleScreen::new);
+		context.waitForScreen(net.minecraft.client.gui.screens.TitleScreen.class);
 	}
 
 	private static void waitForReplay(ClientGameTestContext context) {
@@ -257,29 +279,24 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		}
 	}
 
-	private static void checkExport(ClientGameTestContext context, Path output) {
+	/**
+	 * Screen overlays must not be part of the GUI pass, or Flashback exports with "No GUI" would drop them. Hide the
+	 * HUD and check they are still drawn.
+	 * <p>
+	 * (A real Flashback export can't run inside Fabric's client gametest: the gametest steps the server in lock-step
+	 * with client ticks, while an export blocks the client until the server reaches the export tick, so both wait
+	 * forever. Exports are checked by hand instead.)
+	 */
+	private static void checkHiddenHud(ClientGameTestContext context) {
 		context.runOnClient(minecraft -> {
-			ReplayServer replayServer = Flashback.getReplayServer();
-			EditorState editorState = PlaybackTime.liveEditorState();
-			var player = minecraft.player;
-			VideoCodec codec = VideoContainer.PNG_SEQUENCE.getSupportedVideoCodecs(false)[0];
-			// Same settings as Flashback's "Export screenshot", with "No GUI" on.
-			ExportSettings settings = new ExportSettings(null, editorState.copyWithoutKeyframes(),
-				player.position(), player.getYRot(), player.getXRot(),
-				640, 360, 40, 40,
-				Flashback.getConfig().internalExport.projection, Flashback.getConfig().internalExport.orthographicZoom[0],
-				1, false, false,
-				VideoContainer.PNG_SEQUENCE, codec, codec.getEncoders()[0], 0, false, false, true,
-				false, null,
-				output, null);
-			replayServer.replayPaused = true;
-			Flashback.EXPORT_JOB = new ExportJob(settings);
+			if (!minecraft.gui.hud.isHidden()) {
+				minecraft.gui.hud.toggle();
+			}
 		});
-		context.waitFor(minecraft -> Flashback.EXPORT_JOB == null && Files.exists(output), 20 * 120);
-		BufferedImage exported = read(output);
-		long pixels = countPixels(exported, SCREEN_IMAGE_RGB);
-		log("Screen image pixels in exported frame: " + pixels + " (" + exported.getWidth() + "x" + exported.getHeight() + ")");
-		check(pixels > 500, "exported frame should contain the screen image");
+		long pixels = countPixels(screenshotAt(context, 41, "billboards-hud-hidden"), SCREEN_IMAGE_RGB);
+		log("Screen image pixels with the HUD hidden: " + pixels);
+		check(pixels > 500, "screen overlays should still render with the HUD hidden");
+		context.runOnClient(minecraft -> minecraft.gui.hud.toggle());
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -339,6 +356,21 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 			return zips.stream().max(Comparator.comparingLong(p -> p.toFile().lastModified()));
 		} catch (IOException e) {
 			return Optional.empty();
+		}
+	}
+
+	private static void copyTree(Path from, Path to) {
+		try (Stream<Path> paths = Files.walk(from)) {
+			for (Path path : paths.toList()) {
+				Path target = to.resolve(from.relativize(path).toString());
+				if (Files.isDirectory(path)) {
+					Files.createDirectories(target);
+				} else {
+					Files.copy(path, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				}
+			}
+		} catch (IOException e) {
+			throw new java.io.UncheckedIOException(e);
 		}
 	}
 

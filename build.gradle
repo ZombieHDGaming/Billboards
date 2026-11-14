@@ -30,7 +30,7 @@ loom {
 	}
 }
 
-// In-game integration test (records a replay, adds overlays, checks screenshots and an export):
+// In-game integration test (records a replay, adds overlays, checks screenshots and keyframe saving):
 //   ./gradlew runClientGameTest   (needs a display; on a headless machine use xvfb-run)
 fabricApi {
 	configureTests {
@@ -39,6 +39,21 @@ fabricApi {
 		enableGameTests = false
 		enableClientGameTests = true
 		eula = true
+	}
+}
+
+// Real Flashback exports can't run inside the client gametest (it ticks the server in lock-step with the client,
+// while an export blocks the client until the server catches up), so they are checked in a normal client that opens
+// the replay the game test saved:  ./gradlew runClientGameTest runExportCheck
+loom {
+	runs {
+		exportCheck {
+			client()
+			name = "Export check"
+			source sourceSets.gametest
+			runDir = "build/run/exportCheck"
+			vmArg "-Dbillboards.exportCheck=true"
+		}
 	}
 }
 

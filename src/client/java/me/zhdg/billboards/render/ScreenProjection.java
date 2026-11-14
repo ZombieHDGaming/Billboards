@@ -22,7 +22,9 @@ final class ScreenProjection {
 			buffer = new ProjectionMatrixBuffer("billboards screen overlays");
 		}
 		RenderSystem.backupProjectionMatrix();
-		Matrix4f projection = new Matrix4f().setOrtho(0, width, height, 0, -1000, 1000);
+		// Same conventions as vanilla's GUI projection: reversed Z (near/far swapped) and the device's depth range.
+		boolean zZeroToOne = RenderSystem.getDevice().getDeviceInfo().isZZeroToOne();
+		Matrix4f projection = new Matrix4f().setOrtho(0, width, height, 0, 1000, -1000, zZeroToOne);
 		RenderSystem.setProjectionMatrix(buffer.getBuffer(projection), ProjectionType.ORTHOGRAPHIC);
 	}
 
