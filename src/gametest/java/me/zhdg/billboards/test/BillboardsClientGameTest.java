@@ -59,8 +59,7 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 		log("Recorded replay " + replay);
 
 		context.runOnClient(minecraft -> Flashback.openReplayWorld(replay));
-		context.waitFor(minecraft -> Flashback.getReplayServer() != null && minecraft.level != null && minecraft.player != null
-			&& PlaybackTime.liveEditorState() != null, 20 * 120);
+		waitForReplay(context);
 		context.waitTicks(100); // let the editor UI, chunks and snapshot processing settle
 
 		Path images;
@@ -103,6 +102,27 @@ public class BillboardsClientGameTest implements FabricClientGameTest {
 
 		checkExport(context, images.resolve("export.png"));
 		log("All Billboards checks passed");
+	}
+
+	private static void waitForReplay(ClientGameTestContext context) {
+		for (int i = 0; i < 20 * 120; i++) {
+			String status = context.computeOnClient(minecraft -> "replayServer=" + (Flashback.getReplayServer() != null)
+				+ " level=" + (minecraft.level != null) + " player=" + (minecraft.player != null)
+				+ " screen=" + (minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getSimpleName())
+				+ " editorState=" + (Flashback.getReplayServer() != null && PlaybackTime.liveEditorState() != null));
+			if (!status.contains("false")) {
+				log("Replay open: " + status);
+				return;
+			}
+			if (i % 200 == 0) {
+				log("Waiting for replay: " + status);
+				if (i > 0) {
+					context.takeScreenshot("billboards-waiting-" + i);
+				}
+			}
+			context.waitTick();
+		}
+		throw new AssertionError("Replay did not open");
 	}
 
 	private static Path recordReplay(ClientGameTestContext context) {
