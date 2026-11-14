@@ -133,8 +133,13 @@ public final class OverlayBatch implements AutoCloseable {
 		this.currentKey = null;
 	}
 
-	/** Draws everything into the main render target. Vertices must already be in view space (model-view is identity). */
-	public void draw(String label) {
+	/**
+	 * Draws everything into the main render target.
+	 *
+	 * @param modelView turns the (camera-relative world) vertices into view space
+	 * @param fog       the {@code Fog} uniform for fogged pipelines
+	 */
+	public void draw(String label, Matrix4f modelView, GpuBufferSlice fog) {
 		this.finishCurrent();
 		if (this.draws.isEmpty()) {
 			return;
@@ -142,7 +147,7 @@ public final class OverlayBatch implements AutoCloseable {
 
 		RenderTarget target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
 		GpuTextureView depthView = target.hasDepth() ? target.getDepthTextureView() : null;
-		GpuBufferSlice transforms = RenderSystem.getDynamicUniforms().writeTransform(new Matrix4f());
+		GpuBufferSlice transforms = RenderSystem.getDynamicUniforms().writeTransform(modelView);
 
 		try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
 			() -> label, Objects.requireNonNull(target.getColorTextureView()), Optional.empty(), depthView, OptionalDouble.empty())) {
@@ -155,11 +160,14 @@ public final class OverlayBatch implements AutoCloseable {
 				if (draw.key().blurU() != 0 || draw.key().blurV() != 0) {
 					// The blur radius travels in the texture matrix, which the overlay shader doesn't otherwise use.
 					Matrix4f radius = new Matrix4f().scaling(draw.key().blurU(), draw.key().blurV(), 1);
-					pass.setUniform("DynamicTransforms", RenderSystem.getDynamicUniforms().writeTransform(new Matrix4f(), radius));
+					pass.setUniform("DynamicTransforms", RenderSystem.getDynamicUniforms().writeTransform(modelView, radius));
 				} else {
 					pass.setUniform("DynamicTransforms", transforms);
 				}
 				pass.setUniform("Sampler0", draw.key().texture(), draw.key().sampler());
+				if (OverlayPipelines.isFogged(draw.key().pipeline())) {
+					pass.setUniform("Fog", fog);
+				}
 				if (OverlayPipelines.isLit(draw.key().pipeline())) {
 					pass.setUniform("Sampler2", Minecraft.getInstance().gameRenderer.lightmap(),
 						RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));

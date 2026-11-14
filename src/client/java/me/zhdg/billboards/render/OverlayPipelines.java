@@ -20,7 +20,7 @@ import java.util.Optional;
 /**
  * Pipelines for drawing overlays: textured quads ({@code POSITION_TEX_COLOR}, plus the light level for lit
  * pipelines), no face culling (overlays are visible from both sides), and Billboards' own shader, which has no alpha
- * cut-off. Created on first use for each combination of depth testing, lighting, shader variant and blend mode.
+ * cut-off. Created on first use for each combination of depth testing, lighting, fog, shader variant and blend mode.
  */
 public final class OverlayPipelines {
 
@@ -48,7 +48,7 @@ public final class OverlayPipelines {
 	/** Depth-tested against the world but doesn't write depth, so overlapping overlays never z-fight. */
 	private static final DepthStencilState TEST_NO_WRITE = new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false);
 
-	private record Key(boolean depthTest, boolean lit, Variant variant, BlendMode blend) {
+	private record Key(boolean depthTest, boolean lit, boolean fog, Variant variant, BlendMode blend) {
 	}
 
 	private static final Map<Key, RenderPipeline> PIPELINES = new HashMap<>();
@@ -58,10 +58,18 @@ public final class OverlayPipelines {
 
 	/**
 	 * @param lit multiply the colour by the lightmap at each vertex's light level, like vanilla text displays
+	 * @param fog fade into the world's fog with distance, like vanilla text displays (needs the {@code Fog} uniform)
 	 */
-	public static RenderPipeline get(boolean depthTest, boolean lit, Variant variant, BlendMode blend) {
-		return PIPELINES.computeIfAbsent(new Key(depthTest, lit, variant, blend), OverlayPipelines::create);
+	public static RenderPipeline get(boolean depthTest, boolean lit, boolean fog, Variant variant, BlendMode blend) {
+		return PIPELINES.computeIfAbsent(new Key(depthTest, lit, fog, variant, blend), OverlayPipelines::create);
 	}
+
+	/** Whether a pipeline from {@link #get} applies fog (and so needs the {@code Fog} uniform). */
+	public static boolean isFogged(RenderPipeline pipeline) {
+		return FOGGED.contains(pipeline);
+	}
+
+	private static final java.util.Set<RenderPipeline> FOGGED = new java.util.HashSet<>();
 
 	/** Whether a pipeline from {@link #get} samples the lightmap (bound as {@code Sampler2}). */
 	public static boolean isLit(RenderPipeline pipeline) {
@@ -69,7 +77,7 @@ public final class OverlayPipelines {
 	}
 
 	private static RenderPipeline create(Key key) {
-		String name = "overlay_" + (key.depthTest() ? "depth" : "no_depth") + (key.lit() ? "_lit" : "") + "_" + key.variant().name().toLowerCase(Locale.ROOT)
+		String name = "overlay_" + (key.depthTest() ? "depth" : "no_depth") + (key.lit() ? "_lit" : "") + (key.fog() ? "_fog" : "") + "_" + key.variant().name().toLowerCase(Locale.ROOT)
 			+ "_" + key.blend().name().toLowerCase(Locale.ROOT);
 		RenderPipeline.Builder builder = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
 			.withLocation(Billboards.id("pipeline/" + name))
@@ -83,13 +91,20 @@ public final class OverlayPipelines {
 				.withVertexBinding(0, DefaultVertexFormat.POSITION_TEX_LIGHTMAP_COLOR)
 				.withShaderDefine("LIT");
 		}
+		if (key.fog()) {
+			builder.withBindGroupLayout(BindGroupLayouts.FOG).withShaderDefine("FOG");
+		}
 		for (String define : key.variant().defines) {
 			builder.withShaderDefine(define);
 		}
 		if (key.blend() != BlendMode.NORMAL) {
 			builder.withShaderDefine("PREMULTIPLY");
 		}
-		return builder.build();
+		RenderPipeline pipeline = builder.build();
+		if (key.fog()) {
+			FOGGED.add(pipeline);
+		}
+		return pipeline;
 	}
 
 	/**

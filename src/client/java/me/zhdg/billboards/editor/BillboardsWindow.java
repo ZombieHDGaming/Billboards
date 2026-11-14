@@ -29,6 +29,7 @@ import me.zhdg.billboards.model.Gradient;
 import me.zhdg.billboards.model.ShapeKind;
 import me.zhdg.billboards.model.Lighting;
 import me.zhdg.billboards.model.TextAlign;
+import me.zhdg.billboards.model.TextFormat;
 import me.zhdg.billboards.project.AssetStore;
 import me.zhdg.billboards.project.Bundles;
 import me.zhdg.billboards.project.ProjectManager;
@@ -37,6 +38,7 @@ import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.ImageTextures;
 import me.zhdg.billboards.render.MediaPlayer;
 import me.zhdg.billboards.render.MediaPlayers;
+import me.zhdg.billboards.render.RichText;
 import me.zhdg.billboards.render.SceneFrame;
 import me.zhdg.billboards.render.OverlayRenderer;
 import net.fabricmc.loader.api.FabricLoader;
@@ -709,6 +711,16 @@ public final class BillboardsWindow {
 				changed = true;
 			}
 			ImGuiHelper.tooltip(Lang.tr("Lines longer than this wrap, in font pixels (40 pixels = 1 block). Vanilla's default is 200. Make text bigger with the Scale channel"));
+			TextFormat format = enumCombo(Lang.tr("Text format"), element.textFormat, TextFormat.values(), f -> f.displayName);
+			if (format != element.textFormat) {
+				element.textFormat = format;
+				changed = true;
+			}
+			ImGuiHelper.tooltip(Lang.tr("Auto reads JSON text components, MiniMessage tags (<gradient:gold:red>, <bold>, <rainbow>...) and & formatting codes. Pick one to force it, e.g. to show MiniMessage tags as plain text"));
+			if (element.textFormat == TextFormat.AUTO && element.content.text != null && !element.content.text.isEmpty()) {
+				ImGui.sameLine();
+				ImGui.textDisabled("(" + Lang.tr(RichText.detect(element.content.text).displayName) + ")");
+			}
 			TextAlign align = enumCombo(Lang.tr("Align"), element.align, TextAlign.values(), a -> a.displayName);
 			if (align != element.align) {
 				element.align = align;

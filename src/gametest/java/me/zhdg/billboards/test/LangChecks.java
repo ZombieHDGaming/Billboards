@@ -34,7 +34,7 @@ final class LangChecks {
 
 			List<String> missing = new ArrayList<>();
 			List<String> names = new ArrayList<>();
-			for (Enum<?>[] values : List.<Enum<?>[]>of(ElementType.values(), Lighting.values(), Facing.values(), TextAlign.values(),
+			for (Enum<?>[] values : List.<Enum<?>[]>of(ElementType.values(), Lighting.values(), me.zhdg.billboards.model.TextFormat.values(), Facing.values(), TextAlign.values(),
 				AttachAnchor.values(), ShapeKind.values(), Gradient.values(), BlendMode.values(), Channel.values(), ViewportTools.Tool.values())) {
 				for (Enum<?> value : values) {
 					try {

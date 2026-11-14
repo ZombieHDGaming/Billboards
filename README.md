@@ -54,21 +54,29 @@ vanilla text displays. Overlays render straight into Flashback's exports, so the
 Text overlays work like vanilla [text displays](https://minecraft.wiki/w/Display#Text_displays): 40 font pixels per
 block, lines 10 pixels apart, a 25% black background one pixel around the text (change or remove it under
 *Background*), lines wrapping at the *line width* (200 pixels by default), left / centre / right alignment, an optional
-shadow, and lighting from the world. Make text bigger with the Transform channel's scale.
+shadow, lighting from the world, and fog with distance. Make text bigger with the Transform channel's scale.
 
-The text itself can use formatting codes, with `&` or `§` (`&6&lGold and bold`, `&r` to reset), or be a JSON text
-component such as `{"text":"Hello","color":"gold","bold":true}`. Formatting colours replace the text colour; the
-Appearance opacity still fades it.
+Text can be styled three ways (*Text format* picks one, or *Auto* tells them apart):
+
+- **[MiniMessage](https://docs.advntr.dev/minimessage/format.html)** tags: `<gradient:#ff8800:#ff0044>Hello</gradient>`,
+  `<rainbow>`, `<bold>`, `<italic>`, `<#33ccff>`, `<shadow:#000000aa>`, `<font:...>` and more.
+- **Formatting codes** with `&` or `§`: `&6&lGold and bold`, `&r` to reset.
+- A **JSON text component**, as in commands: `{"text":"Hello","color":"gold","bold":true}`.
+
+Colours from the styling replace the text colour; the Appearance opacity still fades it. Choose *Formatting codes*
+to show something like `<b>` literally.
 
 | Setting | Like a text display's... |
 |---|---|
 | Billboard: Fixed / Vertical / Horizontal / Center | `billboard` (fixed, vertical, horizontal, center) |
 | See through blocks | `see_through` |
 | Lighting: World light / Full bright / Custom levels | normal lighting / `brightness` override |
+| Fog | lit overlays that aren't see-through fade into the world's fog, like text displays |
 | Line width, Align, Shadow, Background | `line_width`, `alignment`, `shadow`, `background` |
 | Appearance opacity | `text_opacity` (but fading smoothly all the way to 0) |
 
-Lighting works for images, videos and shapes too; they default to *Full bright* so their colours show as they are.
+Lighting (and with it fog) works for images, videos and shapes too; they default to *Full bright*, which skips both,
+so their colours show as they are.
 
 | Channel | Values |
 |---|---|
@@ -129,7 +137,8 @@ On a headless Linux machine, run them under Xvfb with GLX enabled. Xvfb has no s
 BILLBOARDS_NO_SRGB=1 xvfb-run -a -s "-screen 0 1280x720x24 +extension GLX +render" ./gradlew runClientGameTest
 ```
 
-Flashback is "all rights reserved", so it is a compile-only dependency fetched from Modrinth's Maven and is never
+Billboards bundles [Adventure](https://github.com/KyoriPowered/adventure)'s MiniMessage and JSON serializer (MIT) inside
+its jar. Flashback is "all rights reserved", so it is a compile-only dependency fetched from Modrinth's Maven and is never
 bundled into the Billboards jar.
 
 ## License

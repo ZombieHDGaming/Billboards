@@ -1,9 +1,5 @@
 package me.zhdg.billboards.render;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
-import com.mojang.serialization.DynamicOps;
-import com.mojang.serialization.JsonOps;
 import me.zhdg.billboards.model.Channel;
 import me.zhdg.billboards.model.ChannelValues;
 import me.zhdg.billboards.model.Element;
@@ -15,7 +11,6 @@ import net.minecraft.client.StringSplitter;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.Entity;
@@ -24,10 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
 
 /**
  * Where an element is and how big it is. Rendering, viewport picking, gizmos and selection outlines all go through
@@ -146,7 +138,7 @@ public final class ElementGeometry {
 
 		// What Font.split does, with the splitter of whichever font is used.
 		List<FormattedCharSequence> lines = Language.getInstance().getVisualOrder(
-			splitter.splitLines(parse(text), Math.max(1, element.lineWidth), Style.EMPTY));
+			splitter.splitLines(parse(element, text), Math.max(1, element.lineWidth), Style.EMPTY));
 		if (lines.isEmpty()) {
 			return null;
 		}
@@ -177,42 +169,9 @@ public final class ElementGeometry {
 		return new TextLayout(lines, widths, width, custom, fontScale);
 	}
 
-	private static final Pattern LEGACY_CODE = Pattern.compile("&(?=[0-9a-fk-orA-FK-OR])");
-	private static final int PARSE_CACHE_SIZE = 64;
-	private static final Map<String, Component> PARSED = new LinkedHashMap<>(16, 0.75f, true) {
-		@Override
-		protected boolean removeEldestEntry(Map.Entry<String, Component> eldest) {
-			return this.size() > PARSE_CACHE_SIZE;
-		}
-	};
-
-	/**
-	 * Text content as a chat component: a JSON text component if it is one ({@code {"text":"Hi","color":"gold"}}),
-	 * otherwise the text itself with {@code §} or {@code &} formatting codes ({@code &6&lGold bold}).
-	 */
-	public static Component parse(String text) {
-		synchronized (PARSED) {
-			return PARSED.computeIfAbsent(text, ElementGeometry::parseUncached);
-		}
-	}
-
-	private static Component parseUncached(String text) {
-		String trimmed = text.strip();
-		boolean json = (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
-		if (json) {
-			try {
-				JsonElement element = JsonParser.parseString(trimmed);
-				ClientLevel level = Minecraft.getInstance().level;
-				DynamicOps<JsonElement> ops = level == null ? JsonOps.INSTANCE : level.registryAccess().createSerializationContext(JsonOps.INSTANCE);
-				var result = ComponentSerialization.CODEC.parse(ops, element).result();
-				if (result.isPresent()) {
-					return result.get();
-				}
-			} catch (RuntimeException ignored) {
-				// Not valid JSON after all: show it as it is.
-			}
-		}
-		return Component.literal(LEGACY_CODE.matcher(text).replaceAll("§"));
+	/** Text content as a chat component, read as the element's {@link Element#textFormat}. See {@link RichText}. */
+	public static Component parse(Element element, String text) {
+		return RichText.parse(text, element.textFormat);
 	}
 
 	/** Number of characters (code points) in a line. */

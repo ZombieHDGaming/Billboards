@@ -29,7 +29,7 @@ public class LevelRendererMixin {
 			return;
 		}
 		try {
-			OverlayRenderer.renderWorld(cameraState);
+			OverlayRenderer.renderWorld(cameraState, terrainFog);
 		} catch (Exception e) {
 			// Never take the replay down with us; log once and keep going.
 			if (!billboards$loggedError) {

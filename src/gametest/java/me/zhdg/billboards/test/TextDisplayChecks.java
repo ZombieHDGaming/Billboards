@@ -10,6 +10,7 @@ import me.zhdg.billboards.model.ElementType;
 import me.zhdg.billboards.model.Facing;
 import me.zhdg.billboards.model.Lighting;
 import me.zhdg.billboards.model.ShapeKind;
+import me.zhdg.billboards.model.TextFormat;
 import me.zhdg.billboards.project.ProjectManager;
 import me.zhdg.billboards.render.ElementGeometry;
 import me.zhdg.billboards.render.OverlayRenderer;
@@ -35,6 +36,8 @@ final class TextDisplayChecks {
 	/** {@code &c} (red) and the "gold" JSON colour, exactly as Minecraft defines them. */
 	static final int RED = 0xFF5555;
 	static final int GOLD = 0xFFAA00;
+	/** A MiniMessage hex colour. */
+	static final int MINI = 0x2266EE;
 
 	private TextDisplayChecks() {
 	}
@@ -51,9 +54,11 @@ final class TextDisplayChecks {
 		try {
 			long red = LowerThirdChecks.countPixels(frame, RED);
 			long gold = LowerThirdChecks.countPixels(frame, GOLD);
-			log("Formatted text pixels: red (&c) " + red + ", gold (JSON) " + gold);
+			long mini = LowerThirdChecks.countPixels(frame, MINI);
+			log("Formatted text pixels: red (&c) " + red + ", gold (JSON) " + gold + ", MiniMessage #" + Integer.toHexString(MINI) + " " + mini);
 			check(red > 30, "&c should colour the text red");
 			check(gold > 30, "a JSON text component should be drawn in its colour");
+			check(mini > 30, "MiniMessage colours should be drawn");
 
 			int fullBright = frame.getRGB(Math.round(0.3f * frame.getWidth()), Math.round(0.62f * frame.getHeight())) & 0xFFFFFF;
 			int dark = frame.getRGB(Math.round(0.4f * frame.getWidth()), Math.round(0.62f * frame.getHeight())) & 0xFFFFFF;
@@ -66,6 +71,83 @@ final class TextDisplayChecks {
 				ProjectManager.getCurrent().markDirty();
 			});
 		}
+		checkFog(context);
+	}
+
+	/**
+	 * A lit white square 60 blocks away, up in the sky: clear at the normal render distance, gone into the fog at render
+	 * distance 2 (whose fog ends at about 32 blocks), like a text display. A see-through one next to it isn't fogged,
+	 * like a see-through text display. The camera is lifted and tilted up for this, so nothing hides the sky.
+	 */
+	private static void checkFog(ClientGameTestContext context) {
+		float[] fogged = {0.4f, 0.4f};
+		float[] seeThrough = {0.6f, 0.4f};
+		List<Element> added = new ArrayList<>();
+		double[] savedCamera = context.computeOnClient(minecraft -> {
+			var camera = minecraft.getCameraEntity();
+			double[] saved = {camera.getX(), camera.getY(), camera.getZ(), camera.getYRot(), camera.getXRot()};
+			camera.snapTo(camera.getX(), camera.getY() + 4, camera.getZ(), camera.getYRot(), -45);
+			camera.setOldPosAndRot();
+			return saved;
+		});
+		context.waitTicks(5);
+		int previousDistance = context.computeOnClient(minecraft -> {
+			for (float[] spot : List.of(fogged, seeThrough)) {
+				Element square = square(Lighting.CUSTOM);
+				square.name = "Fog check";
+				float size = 0.06f * InFront.frameHeight(60);
+				square.width = size;
+				square.height = size;
+				net.minecraft.world.phys.Vec3 position = InFront.at(spot[0], spot[1], 60);
+				square.facing = Facing.CENTER;
+				square.depthTest = spot == fogged;
+				square.transform.set(Channel.X, position.x);
+				square.transform.set(Channel.Y, position.y);
+				square.transform.set(Channel.Z, position.z);
+				added.add(square);
+			}
+			ProjectManager.getCurrent().elements.addAll(added);
+			return minecraft.options.renderDistance().get();
+		});
+		try {
+			BufferedImage clear = screenshotAt(context, 46, "fog-clear");
+			context.runOnClient(minecraft -> minecraft.options.renderDistance().set(2));
+			context.waitTicks(20);
+			BufferedImage foggy = screenshotAt(context, 47, "fog-thick");
+
+			int clearSquare = pixel(clear, fogged[0], fogged[1]);
+			int foggySquare = pixel(foggy, fogged[0], fogged[1]);
+			int foggySky = pixel(foggy, fogged[0], fogged[1] + 0.06f);
+			int foggySeeThrough = pixel(foggy, seeThrough[0], seeThrough[1]);
+			log("Fog: lit square at render distance " + previousDistance + " #" + Integer.toHexString(clearSquare) + ", at 2 #"
+				+ Integer.toHexString(foggySquare) + " (fog around it #" + Integer.toHexString(foggySky) + "), see-through #"
+				+ Integer.toHexString(foggySeeThrough));
+			check(brightness(clearSquare) > 200, "the lit square should be visible and bright without fog");
+			check(close(foggySquare, foggySky, 12), "in thick fog the lit square should take the fog's colour");
+			check(brightness(foggySeeThrough) > 200, "see-through overlays shouldn't be fogged");
+		} finally {
+			context.runOnClient(minecraft -> {
+				minecraft.options.renderDistance().set(previousDistance);
+				ProjectManager.getCurrent().elements.removeAll(added);
+				var camera = minecraft.getCameraEntity();
+				camera.snapTo(savedCamera[0], savedCamera[1], savedCamera[2], (float) savedCamera[3], (float) savedCamera[4]);
+				camera.setOldPosAndRot();
+			});
+			context.waitTicks(20);
+		}
+	}
+
+	private static int pixel(BufferedImage image, float fx, float fy) {
+		return image.getRGB(Math.round(fx * image.getWidth()), Math.round(fy * image.getHeight())) & 0xFFFFFF;
+	}
+
+	private static boolean close(int a, int b, int tolerance) {
+		for (int shift = 0; shift <= 16; shift += 8) {
+			if (Math.abs(((a >> shift) & 0xFF) - ((b >> shift) & 0xFF)) > tolerance) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Sizes, background, wrapping and formatting, against Minecraft's own font maths. */
@@ -97,6 +179,25 @@ final class TextDisplayChecks {
 		}
 		check(lines.height() == lines.lines().size() * 10 - 1, "lines should be 10 pixels apart");
 		check(ElementGeometry.textLayout(text("one\ntwo"), text("one\ntwo").content).lines().size() == 2, "newlines should break lines");
+
+		// MiniMessage: tags take no space, styles apply, gradients colour each letter.
+		check(width(text("<red>Red</red>")) == font.width("Red"), "MiniMessage tags should take no space");
+		check(width(text("<bold>Bold</bold>")) == font.width("§lBold"), "MiniMessage <bold> should be bold");
+		check(me.zhdg.billboards.render.RichText.detect("<gradient:red:blue>x</gradient>") == TextFormat.MINIMESSAGE, "auto: MiniMessage");
+		check(me.zhdg.billboards.render.RichText.detect("I <3 & you") == TextFormat.CODES, "auto: plain text stays plain");
+		check(me.zhdg.billboards.render.RichText.detect("&6<b>") == TextFormat.CODES, "auto: formatting codes win over tag-like text");
+		Element literal = text("<red>Red</red>");
+		literal.textFormat = TextFormat.CODES;
+		check(width(literal) == font.width("<red>Red</red>"), "forcing formatting codes shows MiniMessage tags as text");
+		Element gradient = text("<gradient:#ff0000:#0000ff>GRADIENT</gradient>");
+		java.util.Set<Integer> colours = new java.util.HashSet<>();
+		ElementGeometry.textLayout(gradient, gradient.content).lines().getFirst().accept((index, style, codePoint) -> {
+			colours.add(style.getColor() == null ? -1 : style.getColor().getValue());
+			return true;
+		});
+		check(colours.size() == 8 && !colours.contains(-1), "a MiniMessage gradient should give each letter its own colour: " + colours);
+		Element rainbow = text("<rainbow>rainbow</rainbow> <shadow:#ff000080>shadow");
+		check(width(rainbow) == font.width("rainbow shadow"), "rainbow and shadow tags");
 
 		Element half = text("abcdef");
 		half.content.set(Channel.REVEAL, 0.5);
@@ -138,7 +239,9 @@ final class TextDisplayChecks {
 		InFront.place(red, 0.3f, 0.3f);
 		Element gold = text("{\"text\":\"GOLD\",\"color\":\"gold\"}");
 		InFront.place(gold, 0.3f, 0.42f);
-		for (Element element : List.of(red, gold)) {
+		Element mini = text("<color:#2266ee>MINI</color> <gradient:gold:red>message</gradient>");
+		InFront.place(mini, 0.3f, 0.52f);
+		for (Element element : List.of(red, gold, mini)) {
 			InFront.scale(element, InFront.textScale(0.06f));
 			element.backgroundColor = 0;
 			element.layer = 20;
@@ -153,7 +256,7 @@ final class TextDisplayChecks {
 		check(OverlayRenderer.light(dark, ElementGeometry.worldPosition(dark, dark.transform)) == LightCoordsUtil.pack(0, 0), "custom light levels");
 		check(OverlayRenderer.light(fullBright, ElementGeometry.worldPosition(fullBright, fullBright.transform)) < 0, "full bright skips the lightmap");
 
-		added.addAll(List.of(red, gold, fullBright, dark));
+		added.addAll(List.of(red, gold, mini, fullBright, dark));
 		project.elements.addAll(added);
 		project.markDirty();
 	}

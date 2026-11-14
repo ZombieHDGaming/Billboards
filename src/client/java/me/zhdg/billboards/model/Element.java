@@ -69,6 +69,8 @@ public class Element {
 	/** Lines wrap at this width, in font pixels (vanilla's {@code line_width}, default 200). */
 	public int lineWidth = 200;
 	public TextAlign align = TextAlign.CENTER;
+	/** How the text is read: formatting codes, MiniMessage or JSON (or picked automatically). */
+	public TextFormat textFormat = TextFormat.AUTO;
 	public boolean textShadow = false;
 	/** ARGB colour behind the text; 0 for none. Vanilla's default is 25% black. */
 	public int backgroundColor = 0x40000000;
@@ -123,6 +125,7 @@ public class Element {
 		if ("SCREEN".equals(this.space)) this.hidden = true; // its position is a frame fraction, meaningless in the world
 		this.space = null;
 		if (this.lighting == null) this.lighting = Lighting.FULL_BRIGHT;
+		if (this.textFormat == null) this.textFormat = TextFormat.AUTO;
 		if (this.lineWidth <= 0) this.lineWidth = 200;
 		this.blockLight = Math.max(0, Math.min(15, this.blockLight));
 		this.skyLight = Math.max(0, Math.min(15, this.skyLight));
@@ -162,6 +165,7 @@ public class Element {
 		copy.assetId = this.assetId;
 		copy.pixelated = this.pixelated;
 		copy.lineWidth = this.lineWidth;
+		copy.textFormat = this.textFormat;
 		copy.align = this.align;
 		copy.textShadow = this.textShadow;
 		copy.backgroundColor = this.backgroundColor;

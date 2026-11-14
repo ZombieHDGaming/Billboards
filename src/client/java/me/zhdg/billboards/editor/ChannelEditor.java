@@ -100,7 +100,7 @@ public final class ChannelEditor {
 			setText.accept(ImGuiHelper.getString(textBuffer));
 			changed = true;
 		}
-		ImGuiHelper.tooltip(Lang.tr("Text: formatting codes work (&6 gold, &l bold, &o italic, &n underline, &r reset; § too), and so do JSON text components such as {\"text\":\"Hi\",\"color\":\"gold\"}. Long lines wrap at the line width."));
+		ImGuiHelper.tooltip(Lang.tr("Text can be styled with MiniMessage tags (<gradient:#ff8800:#ff0044>Hi</gradient>, <rainbow>, <bold>, <#33ccff>), & formatting codes (&6 gold, &l bold, &r reset), or a JSON text component. Long lines wrap at the line width."));
 
 		float[] reveal = {values.getFloat(Channel.REVEAL)};
 		if (ImGui.sliderFloat(Lang.tr("Reveal##reveal"), reveal, 0f, 1f, "%.2f")) {

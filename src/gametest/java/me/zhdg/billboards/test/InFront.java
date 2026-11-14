@@ -33,21 +33,30 @@ final class InFront {
 
 	/** The world point shown at a frame fraction, {@link #DISTANCE} blocks in front of the camera. */
 	static Vec3 at(float fx, float fy) {
+		return at(fx, fy, DISTANCE);
+	}
+
+	/** The world point shown at a frame fraction, {@code distance} blocks in front of the camera. */
+	static Vec3 at(float fx, float fy, double distance) {
 		OverlayRenderer.SceneCamera camera = camera();
 		Vector3f forward = camera.orientation().transform(new Vector3f(0, 0, -1));
 		Vector3f right = camera.orientation().transform(new Vector3f(1, 0, 0));
 		Vector3f up = camera.orientation().transform(new Vector3f(0, 1, 0));
-		double x = (2 * fx - 1) * DISTANCE / Math.abs(camera.projection().m00());
-		double y = (1 - 2 * fy) * DISTANCE / Math.abs(camera.projection().m11());
+		double x = (2 * fx - 1) * distance / Math.abs(camera.projection().m00());
+		double y = (1 - 2 * fy) * distance / Math.abs(camera.projection().m11());
 		return camera.position().add(
-			forward.x * DISTANCE + right.x * x + up.x * y,
-			forward.y * DISTANCE + right.y * x + up.y * y,
-			forward.z * DISTANCE + right.z * x + up.z * y);
+			forward.x * distance + right.x * x + up.x * y,
+			forward.y * distance + right.y * x + up.y * y,
+			forward.z * distance + right.z * x + up.z * y);
 	}
 
 	/** Blocks covered by the full frame height at {@link #DISTANCE}: a size of {@code f * frameHeight()} is {@code f} of the frame. */
 	static float frameHeight() {
-		return (float) (2 * DISTANCE / Math.abs(camera().projection().m11()));
+		return frameHeight(DISTANCE);
+	}
+
+	static float frameHeight(double distance) {
+		return (float) (2 * distance / Math.abs(camera().projection().m11()));
 	}
 
 	/** Blocks covered by the full frame width at {@link #DISTANCE}. */

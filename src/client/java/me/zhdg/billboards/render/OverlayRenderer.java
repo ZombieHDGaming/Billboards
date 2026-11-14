@@ -2,6 +2,7 @@ package me.zhdg.billboards.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuSampler;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
@@ -80,8 +81,12 @@ public final class OverlayRenderer {
 	// Pass
 	// ------------------------------------------------------------------------------------------------
 
-	/** Called at the end of level rendering with the level projection still bound. */
-	public static void renderWorld(CameraRenderState cameraState) {
+	/**
+	 * Called at the end of level rendering with the level projection still bound.
+	 *
+	 * @param fog the world's fog, applied to lit, depth-tested overlays like vanilla applies it to text displays
+	 */
+	public static void renderWorld(CameraRenderState cameraState, GpuBufferSlice fog) {
 		SceneCamera camera = new SceneCamera(cameraState.pos, new Quaternionf(cameraState.orientation),
 			new Matrix4f(cameraState.viewRotationMatrix), new Matrix4f(cameraState.projectionMatrix), cameraState.xRot, cameraState.yRot);
 		lastCamera = camera;
@@ -117,10 +122,11 @@ public final class OverlayRenderer {
 				}
 				Vector3f offset = model.getTranslation(new Vector3f());
 				int light = light(node.element(), cameraPos.add(offset.x, offset.y, offset.z));
-				Matrix4f root = new Matrix4f(camera.viewRotation()).mul(model);
-				drawElement(new Target(batch, node, replayId, light), root);
+				// Vertices are camera-relative world positions (like vanilla's), so fog can measure distances along the
+				// world's axes; the view rotation is applied as the model-view matrix.
+				drawElement(new Target(batch, node, replayId, light, camera.viewRotation()), model);
 			}
-			batch.draw("billboards overlays");
+			batch.draw("billboards overlays", camera.viewRotation(), fog);
 		}
 	}
 
@@ -160,7 +166,7 @@ public final class OverlayRenderer {
 	// ------------------------------------------------------------------------------------------------
 
 	/** What is being drawn this pass: the element, how it is lit ({@code light} -1 for full bright), and where to. */
-	private record Target(OverlayBatch batch, SceneFrame.Node node, @Nullable UUID replayId, int light) {
+	private record Target(OverlayBatch batch, SceneFrame.Node node, @Nullable UUID replayId, int light, Matrix4f viewRotation) {
 		Element element() {
 			return this.node.element();
 		}
@@ -173,8 +179,13 @@ public final class OverlayRenderer {
 			return this.light >= 0 ? this.light : LightCoordsUtil.FULL_BRIGHT;
 		}
 
+		/** Fogged like vanilla text displays: lit ones that aren't see-through. */
+		boolean fogged() {
+			return this.lit() && this.element().depthTest;
+		}
+
 		com.mojang.renderpearl.api.pipeline.RenderPipeline pipeline(OverlayPipelines.Variant variant, BlendMode blend) {
-			return OverlayPipelines.get(this.element().depthTest, this.lit(), variant, blend);
+			return OverlayPipelines.get(this.element().depthTest, this.lit(), this.fogged(), variant, blend);
 		}
 
 		VertexConsumer begin(OverlayPipelines.Variant variant, BlendMode blend, GpuTextureView texture, GpuSampler sampler) {
@@ -231,7 +242,8 @@ public final class OverlayRenderer {
 		}
 		if (effects.shadow) {
 			// The offset is right/down as seen from the camera, so it doesn't turn with the element.
-			Matrix4f shadowRoot = new Matrix4f().translate(effects.shadowOffsetX, -effects.shadowOffsetY, 0).mul(root);
+			Matrix4f view = target.viewRotation();
+			Matrix4f shadowRoot = new Matrix4f(view).invert().translate(effects.shadowOffsetX, -effects.shadowOffsetY, 0).mul(view).mul(root);
 			float softness = effects.shadowSoftness;
 			if (softness <= 0) {
 				drawContent(target, shadowRoot, Style.silhouette(effects.shadowColor, 0, 0));
