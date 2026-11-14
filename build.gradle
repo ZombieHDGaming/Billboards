@@ -4,20 +4,67 @@ plugins {
 }
 
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
+	// Flashback is only published on Modrinth. It is "all rights reserved", so it is a
+	// compile-only dependency and is never bundled into the Billboards jar.
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
+	// Adventure (MiniMessage), straight from Maven Central's primary host.
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "MavenCentralKyori"
+				url = "https://repo1.maven.org/maven2"
+			}
+		}
+		filter {
+			includeGroup "net.kyori"
+		}
+	}
 }
 
 loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"modid" {
+		"billboards" {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
+		}
+	}
+}
+
+// In-game integration test (records a replay, adds overlays, checks screenshots and keyframe saving):
+//   ./gradlew runClientGameTest   (needs a display; on a headless machine use xvfb-run)
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "billboards-gametest"
+		enableGameTests = false
+		enableClientGameTests = true
+		eula = true
+	}
+}
+
+// Real Flashback exports can't run inside the client gametest (it ticks the server in lock-step with the client,
+// while an export blocks the client until the server catches up), so they are checked in a normal client that opens
+// the replay the game test saved:  ./gradlew runClientGameTest runExportCheck
+loom {
+	runs {
+		exportCheck {
+			client()
+			name = "Export check"
+			source sourceSets.gametest
+			runDir = "build/run/exportCheck"
+			vmArg "-Dbillboards.exportCheck=true"
 		}
 	}
 }
@@ -29,6 +76,22 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Flashback: compile against it (incl. its shaded ImGui + JavaCV) and run it in dev, never ship it.
+	compileOnly "maven.modrinth:flashback:${project.flashback_version}"
+	localRuntime "maven.modrinth:flashback:${project.flashback_version}"
+
+	// Adventure's MiniMessage (MIT) for styling text with tags like <gradient>, and its Gson serializer to turn the
+	// result into Minecraft's JSON text. Its jars ship inside the Billboards jar; Gson comes with Minecraft.
+	implementation("net.kyori:adventure-text-minimessage:${project.adventure_version}")
+	implementation("net.kyori:adventure-text-serializer-gson:${project.adventure_version}") {
+		exclude group: "com.google.code.gson"
+	}
+	["adventure-api", "adventure-key", "adventure-text-minimessage", "adventure-text-serializer-commons",
+	 "adventure-text-serializer-json", "adventure-text-serializer-gson"].each {
+		include("net.kyori:${it}:${project.adventure_version}") { transitive = false }
+	}
+	include("net.kyori:option:1.1.0") { transitive = false }
 }
 
 processResources {

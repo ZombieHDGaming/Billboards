@@ -1,0 +1,19 @@
+{
+	"required": true,
+	"package": "me.zhdg.billboards.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"EditorStateAccessor",
+		"FlashbackGsonMixin",
+		"KeyframeTypeAdapterMixin",
+		"LevelRendererMixin",
+		"MainMenuBarMixin",
+		"ReplayUIMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

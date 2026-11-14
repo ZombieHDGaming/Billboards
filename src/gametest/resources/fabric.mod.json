@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"id": "billboards-gametest",
+	"version": "1.0.0",
+	"name": "Billboards game tests",
+	"environment": "client",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"me.zhdg.billboards.test.BillboardsClientGameTest"
+		],
+		"client": [
+			"me.zhdg.billboards.test.ExportCheck"
+		]
+	},
+	"depends": {
+		"billboards": "*"
+	},
+	"mixins": [
+		"billboards-gametest.mixins.json"
+	]
+}
