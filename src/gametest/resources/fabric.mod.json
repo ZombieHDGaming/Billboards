@@ -11,5 +11,8 @@
 	},
 	"depends": {
 		"billboards": "*"
-	}
+	},
+	"mixins": [
+		"billboards-gametest.mixins.json"
+	]
 }

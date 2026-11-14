@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "me.zhdg.billboards.test.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"GlBackendMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
